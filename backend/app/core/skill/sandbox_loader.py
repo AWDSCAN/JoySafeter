@@ -448,10 +448,11 @@ class SkillSandboxLoader:
             # Construct full path in sandbox using PurePosixPath
             file_path = str(skill_dir_path / skill_file.path)
 
-            # Write file (use overwrite mode if available to handle existing files)
+            # Write file (use overwrite mode if available; BackendProtocol 扩展可能有 write_overwrite)
             try:
-                if use_overwrite:
-                    write_result = backend.write_overwrite(file_path, skill_file.content)
+                write_overwrite_fn = getattr(backend, "write_overwrite", None) if use_overwrite else None
+                if write_overwrite_fn is not None and callable(write_overwrite_fn):
+                    write_result = write_overwrite_fn(file_path, skill_file.content)
                 else:
                     write_result = backend.write(file_path, skill_file.content)
 

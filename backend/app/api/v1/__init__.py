@@ -22,6 +22,7 @@ from .oauth import router as oauth_router
 from .organizations import router as organizations_router
 from .skills import router as skills_router
 from .tools import router as tools_router
+from .traces import router as traces_router
 from .users import router as users_router
 from .workspace_files import router as workspace_files_router
 from .workspace_folders import router as workspace_folders_router
@@ -46,6 +47,7 @@ ROUTERS = [
     chat_router,
     graphs_router,
     copilot_deepagents_router,
+    traces_router,
     users_router,
     environment_router,
 ]

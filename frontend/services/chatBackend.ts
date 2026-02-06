@@ -67,6 +67,10 @@ export interface StreamEventEnvelope {
   timestamp: number;
   thread_id: string;
   data: any;
+  // Trace / Observation 层级信息 (Phase D)
+  trace_id?: string;
+  observation_id?: string;
+  parent_observation_id?: string;
 }
 
 /**
@@ -146,6 +150,9 @@ export interface ModelOutputEventData {
   model_name: string;
   model_provider: string;
   usage_metadata?: any; // Usage metadata (token usage, etc.)
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 }
 
 /**

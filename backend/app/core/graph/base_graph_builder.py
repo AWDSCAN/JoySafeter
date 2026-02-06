@@ -12,17 +12,6 @@ from typing import Any, Dict, List, Optional, Set, Type
 from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
 
-# DEEPAGENTS_AVAILABLE is defined in base_graph_builder but also needed in other modules
-try:
-    from deepagents import CompiledSubAgent, create_deep_agent
-
-    DEEPAGENTS_AVAILABLE = True
-except ImportError:
-    DEEPAGENTS_AVAILABLE = False
-    CompiledSubAgent = None
-    create_deep_agent = None
-    logger.warning("[GraphBuilder] deepagents not available, DeepAgents mode will be disabled")
-
 from app.core.agent.sample_agent import get_default_model
 from app.core.graph.node_executors import (
     AgentNodeExecutor,
@@ -42,6 +31,23 @@ from app.core.model.utils.model_ref import parse_model_ref
 from app.core.tools.tool import EnhancedTool
 from app.core.tools.tool_registry import get_global_registry
 from app.models.graph import AgentGraph, GraphEdge, GraphNode
+
+# ==================== Optional deepagents imports ====================
+# DEEPAGENTS_AVAILABLE is defined in base_graph_builder but also needed in other modules
+# 先声明为可选，避免在 except 中赋 None 触发 mypy "Cannot assign to a type"
+CompiledSubAgent: Type[Any] | None = None
+create_deep_agent: Any = None
+DEEPAGENTS_AVAILABLE = False
+
+try:
+    from deepagents import CompiledSubAgent as _CompiledSubAgent
+    from deepagents import create_deep_agent as _create_deep_agent
+
+    CompiledSubAgent = _CompiledSubAgent
+    create_deep_agent = _create_deep_agent
+    DEEPAGENTS_AVAILABLE = True
+except ImportError:
+    logger.warning("[GraphBuilder] deepagents not available, DeepAgents mode will be disabled")
 
 # Constants
 DEFAULT_RECURSION_LIMIT = 200  # Safer default, can be overridden via graph config

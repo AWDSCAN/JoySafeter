@@ -60,12 +60,24 @@ export type AdapterResult =
 
 // Main Adapter Function
 
+/**
+ * Helper: extract trace/observation fields from event envelope
+ */
+function extractTraceFields(evt: ChatStreamEvent): Pick<ExecutionStep, 'traceId' | 'observationId' | 'parentObservationId'> {
+  return {
+    traceId: evt.trace_id || undefined,
+    observationId: evt.observation_id || undefined,
+    parentObservationId: evt.parent_observation_id || undefined,
+  }
+}
+
 export function mapChatEventToExecutionStep(
   evt: ChatStreamEvent,
   ctx: EventAdapterContext
 ): AdapterResult {
   const { currentThoughtId, toolStepMap, nodeStepMap, modelStepMap, genId, getSteps } = ctx
   const { type, node_name, run_id, timestamp, data } = evt
+  const traceFields = extractTraceFields(evt)
 
   // ========== Error Event ==========
   if (type === 'error') {
@@ -89,6 +101,7 @@ export function mapChatEventToExecutionStep(
         status: 'error',
         startTime: timestamp || Date.now(),
         content: errorMsg,
+        ...traceFields,
       },
     }
   }
@@ -113,6 +126,7 @@ export function mapChatEventToExecutionStep(
           status: 'running',
           startTime: timestamp || Date.now(),
           content: delta,
+          ...traceFields,
         },
       }
     }
@@ -147,6 +161,7 @@ export function mapChatEventToExecutionStep(
         status: 'running',
         startTime: timestamp || Date.now(),
         data: { request: toolInput },
+        ...traceFields,
       },
     }
   }
@@ -212,6 +227,7 @@ export function mapChatEventToExecutionStep(
         title: nodeData?.node_label || node_name || 'Node',
         status: 'running',
         startTime: timestamp || Date.now(),
+        ...traceFields,
       },
     }
   }
@@ -281,6 +297,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         endTime: timestamp || Date.now(),
         duration: nodeData?.duration,
+        ...traceFields,
       },
     }
   }
@@ -325,8 +342,8 @@ export function mapChatEventToExecutionStep(
           model_name: modelName,
           model_provider: modelProvider,
           run_id: run_id,
-          // output field will be populated in model_output event
         },
+        ...traceFields,
       },
     }
   }
@@ -338,6 +355,9 @@ export function mapChatEventToExecutionStep(
     const modelProvider = modelData?.model_provider || 'unknown'
     const output = modelData?.output
     const usageMetadata = modelData?.usage_metadata
+    const promptTokens = modelData?.prompt_tokens
+    const completionTokens = modelData?.completion_tokens
+    const totalTokens = modelData?.total_tokens
 
     // Try to find corresponding model_input step and update
     if (run_id && modelStepMap.has(run_id)) {
@@ -354,6 +374,10 @@ export function mapChatEventToExecutionStep(
             output: output,
             usage_metadata: usageMetadata,
           },
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          ...traceFields,
         },
       }
     }
@@ -377,6 +401,10 @@ export function mapChatEventToExecutionStep(
           usage_metadata: usageMetadata,
           run_id: run_id,
         },
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        ...traceFields,
       },
     }
   }
@@ -460,6 +488,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: thoughtData.content,
         data: { step: thoughtData.step },
+        ...traceFields,
       },
     }
   }
@@ -479,6 +508,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: codeData.code,
         data: { step: codeData.step },
+        ...traceFields,
       },
     }
   }
@@ -498,6 +528,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: obsData.observation,
         data: { step: obsData.step, has_error: obsData.has_error },
+        ...traceFields,
       },
     }
   }
@@ -520,6 +551,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: answerStr,
         data: { step: answerData.step, answer: answerData.answer },
+        ...traceFields,
       },
     }
   }
@@ -539,6 +571,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: planData.plan,
         data: { step: planData.step, is_update: planData.is_update },
+        ...traceFields,
       },
     }
   }
@@ -558,6 +591,7 @@ export function mapChatEventToExecutionStep(
         startTime: timestamp || Date.now(),
         content: errorData.error,
         data: { step: errorData.step },
+        ...traceFields,
       },
     }
   }

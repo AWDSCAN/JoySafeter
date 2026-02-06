@@ -130,8 +130,9 @@ class DatabaseSkillAdapter(AgentMiddleware):
         await self._ensure_skills_loaded(runtime)
         if self._skills_middleware is None:
             return None
-        result = await self._skills_middleware.abefore_agent(state, runtime, config)
-        return result  # type: ignore[no-any-return]
+        # SkillsMiddleware 使用 SkillsState，与 AgentState 兼容；返回 SkillsStateUpdate 可视为 AgentState 更新
+        result = await self._skills_middleware.abefore_agent(state, runtime, config)  # type: ignore[arg-type]
+        return result  # type: ignore[return-value,no-any-return]
 
     def before_agent(self, state: AgentState, runtime, config) -> Optional[AgentState]:  # type: ignore[override]
         """Sync version - delegates to async."""

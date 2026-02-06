@@ -118,9 +118,10 @@ class LoggingMiddleware(AgentMiddleware):
             # 写入日志
             log_line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
             try:
-                # 先检查文件是否存在并读取现有内容
+                # 先检查文件是否存在并读取现有内容（BackendProtocol 扩展实现可能有 exists）
                 existing_content = ""
-                if self.backend.exists(log_path):
+                exists_fn = getattr(self.backend, "exists", None)
+                if exists_fn is not None and callable(exists_fn) and exists_fn(log_path):
                     existing_content = self.backend.read(log_path) or ""
 
                 # 添加新行
