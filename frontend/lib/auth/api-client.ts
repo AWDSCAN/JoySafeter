@@ -75,7 +75,7 @@ function notifySessionChange(type: 'signin' | 'logout' | 'refresh'): void {
 }
 
 export function onSessionChange(callback: (type: 'signin' | 'logout' | 'refresh') => void): () => void {
-  if (typeof window === 'undefined') return () => {}
+  if (typeof window === 'undefined') return () => { }
 
   const handler = (e: StorageEvent) => {
     if (e.key === SESSION_CHANGE_KEY && e.newValue) {
@@ -106,7 +106,7 @@ export const authApi = {
     const response = await apiPost<LoginResponse>('auth/sign-in/email', {
       email: params.email,
       password: hashedPassword,
-    })
+    }, { withAuth: false })
 
     if (response.csrf_token) {
       setCsrfToken(response.csrf_token)
@@ -126,7 +126,7 @@ export const authApi = {
       email: params.email,
       password: hashedPassword,
       name: params.name,
-    })
+    }, { withAuth: false })
 
     if (response.csrf_token) {
       setCsrfToken(response.csrf_token)
@@ -220,7 +220,7 @@ export const authApi = {
     const response = await apiPost<LoginResponse>('auth/sign-in/email-otp', {
       email: params.email,
       otp: params.otp,
-    })
+    }, { withAuth: false })
 
     if (response.csrf_token) {
       setCsrfToken(response.csrf_token)

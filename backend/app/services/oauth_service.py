@@ -1,13 +1,13 @@
 """
-OAuth/OIDC 服务 - 处理 OAuth 登录流程的业务逻辑
+OAuth/OIDC service - business logic for OAuth login flow.
 
-功能：
-- 生成 OAuth 授权 URL
-- 处理 OAuth 回调
-- 用授权码换取 tokens
-- 获取用户信息
-- 查找或创建用户
-- 绑定 OAuth 账户
+Responsibilities:
+- Generate OAuth authorization URL
+- Handle OAuth callbacks
+- Exchange auth code for tokens
+- Fetch user info
+- Find or create users
+- Bind OAuth accounts
 """
 
 import secrets
@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exceptions import BadRequestException, UnauthorizedException
-from app.core.oauth_config import get_oauth_config
+from app.core.oauth import get_oauth_config
 from app.core.redis import RedisClient
 from app.models.auth import AuthUser
 from app.models.oauth_account import OAuthAccount
@@ -30,19 +30,19 @@ from app.services.base import BaseService
 
 LOG_PREFIX = "[OAuthService]"
 
-# State 过期时间（秒）
-OAUTH_STATE_EXPIRE_SECONDS = 600  # 10 分钟
+# State TTL (seconds)
+OAUTH_STATE_EXPIRE_SECONDS = 600  # 10 minutes
 
 
 class OAuthService(BaseService):
-    """OAuth 认证服务"""
+    """OAuth auth service."""
 
     def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.user_repo = AuthUserRepository(db)
         self.oauth_config = get_oauth_config()
 
-    # ==================== 授权流程 ====================
+    # ==================== Authorization Flow ====================
 
     async def generate_authorization_url(
         self,
@@ -51,28 +51,28 @@ class OAuthService(BaseService):
         state: Optional[str] = None,
     ) -> Tuple[str, str]:
         """
-        生成 OAuth 授权 URL
+        Generate OAuth authorization URL.
 
         Args:
-            provider_name: 提供商标识
-            redirect_uri: 回调 URL
-            state: 可选的 state 参数，如果不提供则自动生成
+            provider_name: Provider key
+            redirect_uri: Callback URL
+            state: Optional state; auto-generated if missing
 
         Returns:
             Tuple of (authorization_url, state)
 
         Raises:
-            BadRequestException: 提供商不存在或未启用
+            BadRequestException: Provider not found or disabled
         """
         provider = self.oauth_config.get_provider(provider_name)
         if not provider:
             raise BadRequestException(f"OAuth provider '{provider_name}' not found or not enabled")
 
-        # 生成或使用提供的 state
+        # Generate or reuse state
         if not state:
             state = secrets.token_urlsafe(32)
 
-        # 存储 state 到 Redis（用于验证回调）
+        # Store state in Redis (for callback validation)
         state_key = f"oauth_state:{state}"
         state_data = {
             "provider": provider_name,
@@ -88,7 +88,7 @@ class OAuthService(BaseService):
             except Exception as e:
                 logger.warning(f"{LOG_PREFIX} Failed to store state in Redis: {e}")
 
-        # 获取 authorize URL（可能需要 OIDC Discovery）
+        # Get authorize URL (may require OIDC Discovery)
         authorize_url: Optional[str] = provider.authorize_url or None
         if not authorize_url and provider.issuer:
             try:
@@ -101,7 +101,7 @@ class OAuthService(BaseService):
         if not authorize_url:
             raise BadRequestException(f"No authorization URL configured for {provider_name}")
 
-        # 构建授权 URL 参数
+        # Build authorization URL params
         params = {
             "client_id": provider.client_id,
             "redirect_uri": redirect_uri,
@@ -110,7 +110,7 @@ class OAuthService(BaseService):
             "state": state,
         }
 
-        # Google 需要 access_type=offline 来获取 refresh_token
+        # Google requires access_type=offline for refresh_token
         if provider_name == "google":
             params["access_type"] = "offline"
             params["prompt"] = "consent"
@@ -122,13 +122,13 @@ class OAuthService(BaseService):
 
     async def validate_state(self, state: str) -> Optional[Dict[str, Any]]:
         """
-        验证 OAuth state 参数
+        Validate OAuth state.
 
         Args:
-            state: state 参数值
+            state: State value
 
         Returns:
-            State 数据或 None（如果无效）
+            State data or None if invalid
         """
         state_key = f"oauth_state:{state}"
 
@@ -138,7 +138,7 @@ class OAuthService(BaseService):
 
                 state_data_str = await RedisClient.get(state_key)
                 if state_data_str:
-                    # 删除已使用的 state（防止重放攻击）
+                    # Delete used state (prevent replay attacks)
                     await RedisClient.delete(state_key)
                     return cast(Dict[str, Any], json.loads(state_data_str))
             except Exception as e:
@@ -146,7 +146,7 @@ class OAuthService(BaseService):
 
         return None
 
-    # ==================== Token 交换 ====================
+    # ==================== Token Exchange ====================
 
     async def exchange_code_for_tokens(
         self,
@@ -155,21 +155,21 @@ class OAuthService(BaseService):
         redirect_uri: str,
     ) -> Dict[str, Any]:
         """
-        用授权码换取 tokens
+        Exchange auth code for tokens.
 
         Args:
-            provider_name: 提供商标识
-            code: 授权码
-            redirect_uri: 回调 URL
+            provider_name: Provider key
+            code: Auth code
+            redirect_uri: Callback URL
 
         Returns:
-            Token 响应字典
+            Token response dict
         """
         provider = self.oauth_config.get_provider(provider_name)
         if not provider:
             raise BadRequestException(f"OAuth provider '{provider_name}' not found")
 
-        # 获取 token URL
+        # Get token URL
         token_url: Optional[str] = provider.token_url or None
         if not token_url and provider.issuer:
             try:
@@ -182,7 +182,7 @@ class OAuthService(BaseService):
         if not token_url:
             raise BadRequestException(f"No token URL configured for {provider_name}")
 
-        # 构建请求
+        # Build request
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -193,17 +193,17 @@ class OAuthService(BaseService):
 
         headers = {"Accept": "application/json"}
 
-        # GitHub 特殊处理：使用 client_secret_post
+        # GitHub: use client_secret_post
         if provider.token_endpoint_auth_method == "client_secret_post":
-            # client_id 和 client_secret 已在 data 中
+            # client_id/client_secret already in data
             pass
         else:
-            # 默认使用 client_secret_basic（HTTP Basic Auth）
+            # Default to client_secret_basic (HTTP Basic Auth)
             import base64
 
             credentials = base64.b64encode(f"{provider.client_id}:{provider.client_secret}".encode()).decode()
             headers["Authorization"] = f"Basic {credentials}"
-            # 移除 data 中的 client credentials
+            # Remove client credentials from data
             del data["client_id"]
             del data["client_secret"]
 
@@ -212,12 +212,12 @@ class OAuthService(BaseService):
                 response = await client.post(token_url, data=data, headers=headers)
                 response.raise_for_status()
 
-                # GitHub 可能返回 application/x-www-form-urlencoded
+                # GitHub may return application/x-www-form-urlencoded
                 content_type = response.headers.get("content-type", "")
                 if "application/json" in content_type:
                     tokens: Dict[str, Any] = response.json()
                 else:
-                    # 解析 URL 编码的响应
+                    # Parse URL-encoded response
                     from urllib.parse import parse_qs
 
                     parsed = parse_qs(response.text)
@@ -233,7 +233,7 @@ class OAuthService(BaseService):
             logger.error(f"{LOG_PREFIX} Token exchange error: {e}")
             raise BadRequestException(f"Token exchange failed: {str(e)}")
 
-    # ==================== 用户信息 ====================
+    # ==================== User Info ====================
 
     async def fetch_userinfo(
         self,
@@ -241,20 +241,20 @@ class OAuthService(BaseService):
         access_token: str,
     ) -> Dict[str, Any]:
         """
-        获取用户信息
+        Fetch user info.
 
         Args:
-            provider_name: 提供商标识
+            provider_name: Provider key
             access_token: Access token
 
         Returns:
-            用户信息字典
+            User info dict
         """
         provider = self.oauth_config.get_provider(provider_name)
         if not provider:
             raise BadRequestException(f"OAuth provider '{provider_name}' not found")
 
-        # 获取 userinfo URL
+        # Get userinfo URL
         userinfo_url = provider.userinfo_url
         if not userinfo_url and provider.issuer:
             try:
@@ -277,7 +277,7 @@ class OAuthService(BaseService):
                 response.raise_for_status()
                 userinfo: Dict[str, Any] = response.json()
 
-                # GitHub 特殊处理：需要单独获取邮箱
+                # GitHub special case: fetch email separately
                 if provider_name == "github" and not userinfo.get("email"):
                     email = await self._fetch_github_email(access_token)
                     if email:
@@ -294,7 +294,7 @@ class OAuthService(BaseService):
             raise BadRequestException(f"Failed to fetch user info: {str(e)}")
 
     async def _fetch_github_email(self, access_token: str) -> Optional[str]:
-        """获取 GitHub 用户的主邮箱"""
+        """Get GitHub primary email."""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
@@ -307,12 +307,12 @@ class OAuthService(BaseService):
                 response.raise_for_status()
                 emails = response.json()
 
-                # 优先返回 primary 且 verified 的邮箱
+                # Prefer primary & verified
                 for email in emails:
                     if email.get("primary") and email.get("verified"):
                         return cast(Optional[str], email.get("email"))
 
-                # 其次返回任意 verified 的邮箱
+                # Otherwise return any verified email
                 for email in emails:
                     if email.get("verified"):
                         return cast(Optional[str], email.get("email"))
@@ -322,7 +322,7 @@ class OAuthService(BaseService):
             logger.warning(f"{LOG_PREFIX} Failed to fetch GitHub email: {e}")
             return None
 
-    # ==================== 用户管理 ====================
+    # ==================== User Management ====================
 
     def parse_userinfo(
         self,
@@ -330,14 +330,14 @@ class OAuthService(BaseService):
         userinfo: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        根据 user_mapping 解析用户信息
+        Parse user info by user_mapping.
 
         Args:
-            provider_name: 提供商标识
-            userinfo: 原始用户信息
+            provider_name: Provider key
+            userinfo: Raw user info
 
         Returns:
-            标准化的用户信息
+            Normalized user info
         """
         provider = self.oauth_config.get_provider(provider_name)
         if not provider:
@@ -363,49 +363,49 @@ class OAuthService(BaseService):
         raw_userinfo: Dict[str, Any],
     ) -> Tuple[AuthUser, bool]:
         """
-        查找或创建 OAuth 用户
+        Find or create OAuth user.
 
-        策略：
-        1. 先查找已有的 OAuth 绑定
-        2. 如果启用了 auto_link_by_email，按邮箱查找现有用户并绑定
-        3. 如果启用了 allow_registration，创建新用户
+        Strategy:
+        1. Find existing OAuth binding
+        2. If auto_link_by_email, link by email
+        3. If allow_registration, create new user
 
         Args:
-            provider_name: 提供商标识
-            provider_account_id: 提供商用户 ID
-            email: 用户邮箱
-            name: 用户名称
-            avatar: 头像 URL
+            provider_name: Provider key
+            provider_account_id: Provider user ID
+            email: User email
+            name: User name
+            avatar: Avatar URL
             tokens: OAuth tokens
-            raw_userinfo: 原始用户信息
+            raw_userinfo: Raw user info
 
         Returns:
             Tuple of (user, is_new_user)
 
         Raises:
-            UnauthorizedException: 用户不存在且不允许注册
+            UnauthorizedException: User missing and registration disabled
         """
         oauth_settings = self.oauth_config.settings
 
-        # 1. 查找已有的 OAuth 绑定
+        # 1) Find existing OAuth binding
         oauth_account = await self._get_oauth_account(provider_name, provider_account_id)
         if oauth_account:
             user = await self.user_repo.get_by_id(oauth_account.user_id)
             if user:
-                # 更新 OAuth tokens
+                # Update OAuth tokens
                 await self._update_oauth_account_tokens(oauth_account, tokens)
                 logger.info(f"{LOG_PREFIX} Found existing OAuth binding for {provider_name}:{provider_account_id}")
                 return user, False
             else:
-                # OAuth 绑定存在但用户不存在（数据不一致），删除绑定
+                # Binding exists but user missing; clean up
                 logger.warning(f"{LOG_PREFIX} OAuth account exists but user not found, cleaning up")
                 await self._delete_oauth_account(oauth_account)
 
-        # 2. 按邮箱查找现有用户（自动绑定）
+        # 2) Link by email if enabled
         if email and oauth_settings.auto_link_by_email:
             existing_user = await self.user_repo.get_by_email(email)
             if existing_user:
-                # 创建 OAuth 绑定
+                # Create OAuth binding
                 await self._create_oauth_account(
                     user_id=existing_user.id,
                     provider_name=provider_name,
@@ -417,7 +417,7 @@ class OAuthService(BaseService):
                 logger.info(f"{LOG_PREFIX} Linked OAuth to existing user by email: {email}")
                 return existing_user, False
 
-        # 3. 创建新用户
+        # 3) Create new user
         if not oauth_settings.allow_registration:
             raise UnauthorizedException("Registration via OAuth is not allowed. Please sign up first.")
 
@@ -426,7 +426,7 @@ class OAuthService(BaseService):
                 f"Email is required for registration. Please ensure your {provider_name} account has a verified email."
             )
 
-        # 创建新用户
+        # Create new user
         import uuid
 
         new_user = AuthUser(
@@ -434,14 +434,14 @@ class OAuthService(BaseService):
             email=email,
             name=name or email.split("@")[0],
             image=avatar,
-            hashed_password=None,  # SSO 用户无密码
-            email_verified=True,  # OAuth 邮箱视为已验证
+            hashed_password=None,  # SSO users have no password
+            email_verified=True,  # OAuth email treated as verified
             is_active=True,
         )
         self.db.add(new_user)
         await self.db.flush()
 
-        # 创建 OAuth 绑定
+        # Create OAuth binding
         await self._create_oauth_account(
             user_id=new_user.id,
             provider_name=provider_name,
@@ -454,14 +454,14 @@ class OAuthService(BaseService):
         logger.info(f"{LOG_PREFIX} Created new user via OAuth: {email}")
         return new_user, True
 
-    # ==================== OAuth Account 管理 ====================
+    # ==================== OAuth Account Management ====================
 
     async def _get_oauth_account(
         self,
         provider_name: str,
         provider_account_id: str,
     ) -> Optional[OAuthAccount]:
-        """查找 OAuth 账户绑定"""
+        """Find OAuth account binding."""
         stmt = select(OAuthAccount).where(
             OAuthAccount.provider == provider_name,
             OAuthAccount.provider_account_id == provider_account_id,
@@ -478,10 +478,10 @@ class OAuthService(BaseService):
         tokens: Dict[str, Any],
         raw_userinfo: Dict[str, Any],
     ) -> OAuthAccount:
-        """创建 OAuth 账户绑定"""
+        """Create OAuth account binding."""
         import uuid
 
-        # 计算 token 过期时间
+        # Calculate token expiry
         expires_in = tokens.get("expires_in")
         token_expires_at = None
         if expires_in:
@@ -509,7 +509,7 @@ class OAuthService(BaseService):
         oauth_account: OAuthAccount,
         tokens: Dict[str, Any],
     ) -> None:
-        """更新 OAuth 账户的 tokens"""
+        """Update OAuth account tokens."""
         if tokens.get("access_token"):
             oauth_account.access_token = tokens["access_token"]
 
@@ -523,14 +523,14 @@ class OAuthService(BaseService):
         await self.db.flush()
 
     async def _delete_oauth_account(self, oauth_account: OAuthAccount) -> None:
-        """删除 OAuth 账户绑定"""
+        """Delete OAuth account binding."""
         await self.db.delete(oauth_account)
         await self.db.flush()
 
-    # ==================== 用户 OAuth 账户查询 ====================
+    # ==================== User OAuth Account Queries ====================
 
     async def get_user_oauth_accounts(self, user_id: str) -> list[OAuthAccount]:
-        """获取用户的所有 OAuth 绑定"""
+        """Get all OAuth bindings for a user."""
         stmt = select(OAuthAccount).where(OAuthAccount.user_id == user_id)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
@@ -541,24 +541,24 @@ class OAuthService(BaseService):
         provider_name: str,
     ) -> bool:
         """
-        解绑 OAuth 账户
+        Unlink OAuth account.
 
         Args:
-            user_id: 用户 ID
-            provider_name: 提供商标识
+            user_id: User ID
+            provider_name: Provider key
 
         Returns:
-            是否成功解绑
+            Whether unlink succeeded
 
         Raises:
-            BadRequestException: 解绑后用户将无法登录
+            BadRequestException: User would be unable to sign in
         """
-        # 检查用户是否有密码（确保解绑后仍能登录）
+        # Ensure user can still sign in after unlink
         user = await self.user_repo.get_by_id(user_id)
         if not user:
             raise BadRequestException("User not found")
 
-        # 获取用户所有 OAuth 绑定
+        # Get all user OAuth bindings
         oauth_accounts = await self.get_user_oauth_accounts(user_id)
         target_account = next(
             (acc for acc in oauth_accounts if acc.provider == provider_name),
@@ -568,7 +568,7 @@ class OAuthService(BaseService):
         if not target_account:
             return False
 
-        # 如果用户没有密码且只有一个 OAuth 绑定，不允许解绑
+        # Disallow unlink when no password and only one OAuth binding
         if not user.hashed_password and len(oauth_accounts) == 1:
             raise BadRequestException("Cannot unlink the only OAuth account. Please set a password first.")
 

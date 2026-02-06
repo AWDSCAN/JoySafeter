@@ -99,9 +99,9 @@ async def sign_up_with_email(
         is_super_user=body.is_super_user,
     )
 
-    # 注册成功后不自动登录，不设置 Cookie
-    # 用户需要手动登录
-    # 只返回用户信息，不返回 token
+    # Do not auto-login after signup; no Cookie is set
+    # User must sign in manually
+    # Return user info only, no token
     user_data = data.get("user", {})
 
     return success_response(data={"user": user_data}, message="Registration successful. Please sign in to continue.")
@@ -149,9 +149,9 @@ async def sign_in_with_email(
             path="/",
         )
 
-    # CSRF token 通过响应体返回，而不是非 HttpOnly Cookie
-    # 前端需要将其存储在内存中并通过 X-CSRF-Token header 发送
-    # 这样避免了 XSS 攻击窃取 CSRF token 的风险
+    # Return CSRF token in response body, not via non-HttpOnly Cookie
+    # Frontend stores it in memory and sends via X-CSRF-Token header
+    # This avoids XSS stealing CSRF tokens
     if csrf_token:
         result["csrf_token"] = csrf_token
 
@@ -325,11 +325,11 @@ async def get_session(
 ):
     """Get current user session (JWT mode: returns user info from token)."""
     try:
-        # 传递 request 对象以便从 Cookie 读取 token
+        # Pass request to read token from Cookie
         current_user = await _get_current_auth_user(token, db, request)
         return success_response(data={"user": _user_to_response(current_user)})
     except (UnauthorizedException, HTTPException):
-        # 未登录时返回 null user
+        # Return null user when unauthenticated
         return success_response(data={"user": None})
 
 
@@ -343,7 +343,7 @@ async def refresh_token(
 
     service = AuthService(db)
 
-    # 尝试从 Cookie 中获取 refresh token
+    # Try to read refresh token from Cookie
     refresh_token_value = None
     try:
         refresh_token_value = request.cookies.get("refresh_token")
@@ -403,7 +403,7 @@ def _extract_bearer(auth_header: Optional[str]) -> str:
 async def _get_current_auth_user(
     auth_header: Optional[str], db: AsyncSession, request: Optional[Request] = None
 ) -> AuthUser:
-    """从 Bearer token 或 Cookie 校验并返回 AuthUser（支持 JWT token 和 session token）。"""
+    """Validate and return AuthUser from Bearer token or Cookie (JWT or session token)."""
     token = None
 
     if auth_header:

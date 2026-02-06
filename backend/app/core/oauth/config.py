@@ -1,11 +1,12 @@
 """
-OAuth/OIDC 提供商配置加载器
+OAuth/OIDC provider config loader.
 
-从 YAML 配置文件加载 OAuth 提供商配置，支持：
-- 内置提供商模板（GitHub、Google 等）
-- 自定义 OIDC 提供商
-- 环境变量替换 ${VAR_NAME}
-- OIDC Discovery 自动获取 endpoints
+Loads provider configs from YAML with support for:
+- built-in provider templates (GitHub, Google, etc.)
+- custom OIDC providers
+- env var expansion ${VAR_NAME}
+- OIDC Discovery endpoints
+- multi-protocol support (oauth2, jd_sso, etc.)
 """
 
 import os
@@ -20,9 +21,9 @@ from loguru import logger
 
 LOG_PREFIX = "[OAuthConfig]"
 
-# ==================== 内置提供商模板 ====================
-# 这些模板包含常见 OAuth 提供商的默认配置
-# 用户只需提供 client_id 和 client_secret 即可使用
+# ==================== Built-in Provider Templates ====================
+# Common OAuth provider defaults
+# Users only need client_id/client_secret
 
 PROVIDER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "github": {
@@ -36,7 +37,7 @@ PROVIDER_TEMPLATES: Dict[str, Dict[str, Any]] = {
             "name": "name",
             "avatar": "avatar_url",
         },
-        # GitHub 特殊配置
+        # GitHub-specific config
         "token_endpoint_auth_method": "client_secret_post",
         "userinfo_headers": {"Accept": "application/vnd.github+json"},
     },
@@ -53,7 +54,7 @@ PROVIDER_TEMPLATES: Dict[str, Dict[str, Any]] = {
         },
     },
     "microsoft": {
-        # Microsoft 使用 {tenant} 占位符，默认为 common（支持所有账户）
+        # Microsoft uses {tenant} placeholder; default "common" (all accounts)
         "authorize_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
         "token_url": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
         "userinfo_url": "https://graph.microsoft.com/oidc/userinfo",
@@ -83,11 +84,11 @@ PROVIDER_TEMPLATES: Dict[str, Dict[str, Any]] = {
 
 @dataclass
 class OAuthProviderConfig:
-    """单个 OAuth 提供商的配置"""
+    """Single OAuth provider config."""
 
-    name: str  # 提供商标识（如 "github"）
-    display_name: str  # 显示名称（如 "GitHub"）
-    icon: str  # 图标标识
+    name: str  # Provider key (e.g. "github")
+    display_name: str  # Display name (e.g. "GitHub")
+    icon: str  # Icon key
     client_id: str
     client_secret: str
     authorize_url: str
@@ -103,15 +104,18 @@ class OAuthProviderConfig:
             "avatar": "picture",
         }
     )
-    # 额外配置
+    # Extra config
     token_endpoint_auth_method: str = "client_secret_basic"
     userinfo_headers: Dict[str, str] = field(default_factory=dict)
     extra: Dict[str, Any] = field(default_factory=dict)
+    # Protocol type: oauth2 (standard), jd_sso (JD SSA)
+    # Non-standard protocols are handled by a ProtocolHandler
+    protocol: str = "oauth2"
 
 
 @dataclass
 class OAuthSettings:
-    """OAuth 全局设置"""
+    """OAuth global settings."""
 
     default_redirect_url: str = "/chat"
     allow_registration: bool = True
@@ -119,20 +123,21 @@ class OAuthSettings:
 
 
 class OAuthConfigLoader:
-    """OAuth 配置加载器"""
+    """OAuth config loader."""
 
     def __init__(self, config_path: Optional[str] = None):
         """
-        初始化配置加载器
+        Initialize the config loader.
 
         Args:
-            config_path: 配置文件路径，如果为 None 则使用默认路径
+            config_path: Config file path; use default when None
         """
         if config_path:
             self.config_path = Path(config_path)
         else:
-            # 默认路径：backend/config/oauth_providers.yaml
-            self.config_path = Path(__file__).parent.parent.parent / "config" / "oauth_providers.yaml"
+            # Default path: backend/config/oauth_providers.yaml
+            # From app/core/oauth/config.py up to app/, then to backend/
+            self.config_path = Path(__file__).parent.parent.parent.parent / "config" / "oauth_providers.yaml"
 
         self._providers: Dict[str, OAuthProviderConfig] = {}
         self._settings: OAuthSettings = OAuthSettings()
@@ -141,10 +146,10 @@ class OAuthConfigLoader:
 
     def load(self, force_reload: bool = False) -> None:
         """
-        加载配置文件
+        Load config file.
 
         Args:
-            force_reload: 是否强制重新加载
+            force_reload: Force reload
         """
         if self._loaded and not force_reload:
             return
@@ -166,7 +171,7 @@ class OAuthConfigLoader:
                 self._loaded = True
                 return
 
-            # 加载全局设置
+            # Load global settings
             settings_raw = raw.get("settings", {})
             self._settings = OAuthSettings(
                 default_redirect_url=settings_raw.get("default_redirect_url", "/chat"),
@@ -174,7 +179,7 @@ class OAuthConfigLoader:
                 auto_link_by_email=settings_raw.get("auto_link_by_email", True),
             )
 
-            # 加载提供商配置
+            # Load provider configs
             for name, config in raw.get("providers", {}).items():
                 if not config.get("enabled", False):
                     logger.debug(f"{LOG_PREFIX} Provider '{name}' is disabled, skipping")
@@ -196,18 +201,18 @@ class OAuthConfigLoader:
             self._loaded = True
 
     def _parse_provider(self, name: str, config: Dict[str, Any]) -> Optional[OAuthProviderConfig]:
-        """解析单个提供商配置"""
-        # 展开环境变量
+        """Parse a single provider config."""
+        # Expand env vars
         config = self._expand_env_vars(config)
 
-        # 获取模板配置
+        # Get template config
         template_name = config.get("template")
         template = PROVIDER_TEMPLATES.get(template_name, {}) if template_name else {}
 
-        # 合并配置（用户配置覆盖模板）
+        # Merge config (user overrides template)
         merged = {**template, **config}
 
-        # 验证必要字段
+        # Validate required fields
         client_id = merged.get("client_id", "").strip()
         client_secret = merged.get("client_secret", "").strip()
 
@@ -215,12 +220,15 @@ class OAuthConfigLoader:
             logger.warning(f"{LOG_PREFIX} Provider '{name}' missing client_id or client_secret")
             return None
 
-        # 处理 Microsoft 的 tenant 占位符
+        # Replace Microsoft tenant placeholder
         tenant = merged.get("tenant", merged.get("default_tenant", "common"))
         authorize_url = merged.get("authorize_url", "").replace("{tenant}", tenant)
         token_url = merged.get("token_url", "").replace("{tenant}", tenant)
 
-        # 构建配置对象
+        # Protocol (default oauth2; jd_sso for JD SSA)
+        protocol = merged.get("protocol", "oauth2")
+
+        # Build config object
         return OAuthProviderConfig(
             name=name,
             display_name=merged.get("display_name", name.capitalize()),
@@ -264,12 +272,14 @@ class OAuthConfigLoader:
                     "userinfo_headers",
                     "tenant",
                     "default_tenant",
+                    "protocol",
                 }
             },
+            protocol=protocol,
         )
 
     def _expand_env_vars(self, obj: Any) -> Any:
-        """递归替换 ${VAR_NAME} 为环境变量值"""
+        """Recursively replace ${VAR_NAME} with env var values."""
         if isinstance(obj, str):
             return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), obj)
         elif isinstance(obj, dict):
@@ -280,13 +290,13 @@ class OAuthConfigLoader:
 
     async def discover_oidc_config(self, issuer: str) -> Dict[str, Any]:
         """
-        从 OIDC Discovery endpoint 获取配置
+        Fetch config from OIDC Discovery endpoint.
 
         Args:
             issuer: OIDC issuer URL
 
         Returns:
-            OIDC 配置字典
+            OIDC config dict
         """
         if issuer in self._oidc_discovery_cache:
             return self._oidc_discovery_cache[issuer]
@@ -306,16 +316,16 @@ class OAuthConfigLoader:
             raise
 
     def get_provider(self, name: str) -> Optional[OAuthProviderConfig]:
-        """获取指定提供商配置"""
+        """Get provider config by name."""
         self.load()
         return self._providers.get(name)
 
     def list_providers(self) -> List[Dict[str, str]]:
         """
-        获取所有已启用提供商的列表（供前端渲染按钮）
+        List enabled providers (for frontend buttons).
 
         Returns:
-            提供商信息列表，不含敏感信息
+            Provider info list without secrets
         """
         self.load()
         return [
@@ -328,28 +338,28 @@ class OAuthConfigLoader:
         ]
 
     def get_all_providers(self) -> Dict[str, OAuthProviderConfig]:
-        """获取所有提供商配置"""
+        """Get all provider configs."""
         self.load()
         return self._providers.copy()
 
     @property
     def settings(self) -> OAuthSettings:
-        """获取全局设置"""
+        """Get global settings."""
         self.load()
         return self._settings
 
     def is_provider_enabled(self, name: str) -> bool:
-        """检查提供商是否启用"""
+        """Check if provider is enabled."""
         self.load()
         return name in self._providers
 
 
-# 全局配置加载器实例（延迟初始化）
+# Global config loader (lazy init)
 _oauth_config: Optional[OAuthConfigLoader] = None
 
 
 def get_oauth_config() -> OAuthConfigLoader:
-    """获取全局 OAuth 配置加载器实例"""
+    """Get global OAuth config loader."""
     global _oauth_config
     if _oauth_config is None:
         from app.core.settings import settings
@@ -360,6 +370,6 @@ def get_oauth_config() -> OAuthConfigLoader:
 
 
 def reload_oauth_config() -> None:
-    """重新加载 OAuth 配置"""
+    """Reload OAuth config."""
     config = get_oauth_config()
     config.load(force_reload=True)
