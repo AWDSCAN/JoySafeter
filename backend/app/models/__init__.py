@@ -17,6 +17,14 @@ from .auth import AuthUser as User
 from .base import BaseModel, SoftDeleteMixin, TimestampMixin
 from .chat import Chat, CopilotChat
 from .custom_tool import CustomTool
+from .execution_trace import (
+    ExecutionObservation,
+    ExecutionTrace,
+    ObservationLevel,
+    ObservationStatus,
+    ObservationType,
+    TraceStatus,
+)
 from .graph import AgentGraph, GraphEdge, GraphNode
 from .graph_deployment_version import GraphDeploymentVersion
 from .mcp import McpServer
@@ -74,4 +82,10 @@ __all__ = [
     "SkillFile",
     "SecurityAuditLog",
     "Memory",
+    "ExecutionTrace",
+    "ExecutionObservation",
+    "TraceStatus",
+    "ObservationType",
+    "ObservationLevel",
+    "ObservationStatus",
 ]

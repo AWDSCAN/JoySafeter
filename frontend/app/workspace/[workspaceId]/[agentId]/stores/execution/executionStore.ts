@@ -14,7 +14,9 @@
 import { create } from 'zustand'
 
 import { streamChat, type ChatStreamEvent } from '@/services/chatBackend'
-import type { ExecutionStep } from '@/types'
+import type { ExecutionStep, ExecutionTreeNode } from '@/types'
+
+import { buildExecutionTree } from '../../lib/tree-building'
 
 import type { GraphState, TraceStep } from '../../components/visualization'
 import { agentService } from '../../services/agentService'
@@ -68,7 +70,17 @@ function syncComputedProperties(state: GraphExecutionState) {
     currentState: state.currentState,
     executionTrace: state.executionTrace,
     routeDecisions: state.routeDecisions,
+    treeRoots: state.treeRoots,
+    treeNodeMap: state.treeNodeMap,
   }
+}
+
+/**
+ * Rebuild tree structure from steps and merge into state updates.
+ */
+function rebuildTree(steps: ExecutionStep[]): { treeRoots: ExecutionTreeNode[]; treeNodeMap: Map<string, ExecutionTreeNode> } {
+  const { roots, nodeMap } = buildExecutionTree(steps)
+  return { treeRoots: roots, treeNodeMap: nodeMap }
 }
 
 // ============ Store ============
@@ -110,6 +122,8 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => {
     currentState: null,
     executionTrace: [],
     routeDecisions: [],
+    treeRoots: [],
+    treeNodeMap: new Map(),
 
     // ============ Graph Switching ============
 
@@ -163,7 +177,8 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => {
     addStep: (step: ExecutionStep) => {
       const state = getCurrentState()
       if (state.steps.some(s => s.id === step.id)) return
-      updateCurrentState({ steps: [...state.steps, step] })
+      const newSteps = [...state.steps, step]
+      updateCurrentState({ steps: newSteps, ...rebuildTree(newSteps) })
     },
 
     updateStep: (stepId: string, updates: Partial<ExecutionStep>) => {
@@ -183,7 +198,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => {
         ? { ...(step.data || {}), ...updates.data }
         : step.data
       newSteps[idx] = { ...step, ...updates, data: mergedData }
-      updateCurrentState({ steps: newSteps })
+      updateCurrentState({ steps: newSteps, ...rebuildTree(newSteps) })
     },
 
     appendContent: (stepId: string, text: string) => {
@@ -217,7 +232,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => {
           })
 
           if (hasChanges) {
-            updateCurrentState({ steps: newSteps })
+            updateCurrentState({ steps: newSteps, ...rebuildTree(newSteps) })
           }
         })
       }
@@ -272,6 +287,8 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => {
         currentState: null,
         executionTrace: [],
         routeDecisions: [],
+        treeRoots: [],
+        treeNodeMap: new Map(),
       })
     },
 

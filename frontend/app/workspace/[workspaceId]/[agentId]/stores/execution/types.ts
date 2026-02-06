@@ -4,7 +4,7 @@
  * Defines all types and interfaces related to execution
  */
 
-import type { ExecutionStep } from '@/types'
+import type { ExecutionStep, ExecutionTreeNode } from '@/types'
 
 import type { GraphState, TraceStep } from '../../components/visualization'
 
@@ -60,6 +60,9 @@ export interface GraphExecutionState {
   currentState: GraphState | null
   executionTrace: TraceStep[]
   routeDecisions: RouteDecision[]
+  // Tree structure (computed from steps)
+  treeRoots: ExecutionTreeNode[]
+  treeNodeMap: Map<string, ExecutionTreeNode>
 }
 
 // ============ Execution Context ============
@@ -87,6 +90,8 @@ export interface ExecutionStoreState {
   currentState: GraphState | null
   executionTrace: TraceStep[]
   routeDecisions: RouteDecision[]
+  treeRoots: ExecutionTreeNode[]
+  treeNodeMap: Map<string, ExecutionTreeNode>
 }
 
 export interface ExecutionStoreActions {

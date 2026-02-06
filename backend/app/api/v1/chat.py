@@ -56,6 +56,12 @@ from app.utils.datetime import utc_now
 from app.utils.stream_event_handler import StreamEventHandler, StreamState
 from app.utils.task_manager import task_manager
 
+# LangGraph 控制流异常：不将 trace 标为 FAILED
+try:
+    from langgraph.errors import GraphBubbleUp
+except ImportError:
+    GraphBubbleUp = None  # type: ignore[misc, assignment]
+
 # Note: graph_cache is no longer used - we use Checkpointer for state persistence
 
 router = APIRouter(prefix="/v1/chat", tags=["Chat"])
@@ -145,35 +151,184 @@ async def safe_get_state(
 # ==================== Persistence Logic ====================
 
 
-async def save_run_result(thread_id: str, state: StreamState, log) -> None:
+async def save_run_result(
+    thread_id: str,
+    state: StreamState,
+    log,
+    *,
+    graph_id: str | None = None,
+    workspace_id: str | None = None,
+    user_id: str | None = None,
+    graph_name: str | None = None,
+) -> None:
     """
     保存运行结果的通用逻辑。
     即使是在 finally 块中调用，也使用新的 DB Session 确保连接可用。
+    同时将 Trace + Observations 批量持久化到数据库。
     """
-    if not state.assistant_content and not state.all_messages:
+    # --- 1. 保存消息 ---
+    if state.assistant_content or state.all_messages:
+        if not state.all_messages and state.assistant_content:
+            log.warning(f"Using fallback content accumulation for thread {thread_id}")
+            state.all_messages = [AIMessage(content=state.assistant_content)]
+
+        if state.all_messages:
+            try:
+                async with AsyncSessionLocal() as session:
+                    await save_assistant_message(thread_id, state.all_messages, session, update_conversation=True)
+                    log.info(f"Persisted messages for thread {thread_id}")
+            except asyncio.CancelledError:
+                log.warning(f"Save run result cancelled for thread {thread_id}")
+            except Exception as e:
+                log.error(f"Failed to persist messages for thread {thread_id}: {e}")
+
+    # --- 2. 持久化 Trace + Observations (事务安全) ---
+    all_observations = state.get_all_observations()
+    if all_observations:
+        try:
+            await _persist_trace_data(
+                state,
+                log,
+                observations=all_observations,
+                graph_id=graph_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                graph_name=graph_name,
+            )
+        except asyncio.CancelledError:
+            log.debug(f"Trace persistence cancelled for thread {thread_id}")
+        except Exception as e:
+            log.warning(f"Failed to persist trace data for thread {thread_id}: {e}")
+
+
+async def _persist_trace_data(
+    state: StreamState,
+    log,
+    *,
+    observations: list | None = None,
+    graph_id: str | None = None,
+    workspace_id: str | None = None,
+    user_id: str | None = None,
+    graph_name: str | None = None,
+) -> None:
+    """
+    将 StreamState 中积累的 Observation 数据批量写入数据库。
+
+    事务安全：使用 session.begin() 确保原子性。
+    未完成的 observations 由 state.get_all_observations() 标记为 INTERRUPTED。
+    """
+    from datetime import datetime, timezone
+
+    from app.models.execution_trace import (
+        ExecutionObservation,
+        ExecutionTrace,
+        ObservationLevel,
+        ObservationStatus,
+        ObservationType,
+        TraceStatus,
+    )
+    from app.utils.stream_event_handler import ObsLevel, ObsStatus, ObsType
+
+    all_obs = observations if observations is not None else state.get_all_observations()
+    if not all_obs:
         return
 
-    # 如果没有从 Graph 拿到完整的 messages 对象（例如被中断），
-    # 则使用累积的文本构建兜底消息
-    if not state.all_messages and state.assistant_content:
-        log.warning(f"Using fallback content accumulation for thread {thread_id}")
-        state.all_messages = [AIMessage(content=state.assistant_content)]
+    # 确定 trace 状态
+    if state.has_error:
+        trace_status = TraceStatus.FAILED
+    elif state.interrupted:
+        trace_status = TraceStatus.INTERRUPTED
+    elif state.stopped:
+        trace_status = TraceStatus.FAILED
+    else:
+        trace_status = TraceStatus.COMPLETED
 
-    if not state.all_messages:
-        return
+    now = datetime.now(timezone.utc)
+    trace_start = datetime.fromtimestamp(state.trace_start_time / 1000, tz=timezone.utc)
+    duration_ms = int(now.timestamp() * 1000 - state.trace_start_time)
 
-    try:
-        async with AsyncSessionLocal() as session:
-            # 复用已有的保存逻辑 (代码在下方定义)
-            await save_assistant_message(thread_id, state.all_messages, session, update_conversation=True)
-            log.info(f"Persisted messages for thread {thread_id}")
-    except asyncio.CancelledError:
-        # 任务/请求在关闭阶段被取消时，这里可能会被打断。
-        # 这是预期行为（例如客户端断开或 stop 请求），不需要作为错误处理。
-        log.warning(f"Save run result cancelled for thread {thread_id}")
-        # 不重新抛出，避免在连接终止过程中产生误导性错误日志。
-    except Exception as e:
-        log.error(f"Failed to persist messages for thread {thread_id}: {e}")
+    # 聚合 token 统计
+    total_tokens = 0
+    for obs_rec in all_obs:
+        if obs_rec.type == ObsType.GENERATION and obs_rec.total_tokens:
+            total_tokens += obs_rec.total_tokens
+
+    # 构造 ExecutionTrace ORM 对象
+    trace_uuid = uuid.UUID(state.trace_id)
+    trace = ExecutionTrace(
+        id=trace_uuid,
+        workspace_id=uuid.UUID(workspace_id) if workspace_id else None,
+        graph_id=uuid.UUID(graph_id) if graph_id else None,
+        thread_id=state.thread_id,
+        user_id=user_id,
+        name=graph_name or "graph_execution",
+        status=trace_status,
+        start_time=trace_start,
+        end_time=now,
+        duration_ms=duration_ms,
+        total_tokens=total_tokens or None,
+    )
+
+    # Enum 映射
+    type_map = {
+        ObsType.SPAN: ObservationType.SPAN,
+        ObsType.GENERATION: ObservationType.GENERATION,
+        ObsType.TOOL: ObservationType.TOOL,
+        ObsType.EVENT: ObservationType.EVENT,
+    }
+    level_map = {
+        ObsLevel.DEBUG: ObservationLevel.DEBUG,
+        ObsLevel.DEFAULT: ObservationLevel.DEFAULT,
+        ObsLevel.WARNING: ObservationLevel.WARNING,
+        ObsLevel.ERROR: ObservationLevel.ERROR,
+    }
+    status_map = {
+        ObsStatus.RUNNING: ObservationStatus.RUNNING,
+        ObsStatus.COMPLETED: ObservationStatus.COMPLETED,
+        ObsStatus.FAILED: ObservationStatus.FAILED,
+        ObsStatus.INTERRUPTED: ObservationStatus.INTERRUPTED,
+    }
+
+    # 构造 ExecutionObservation ORM 对象
+    db_observations = []
+    for rec in all_obs:
+        obs = ExecutionObservation(
+            id=uuid.UUID(rec.id),
+            trace_id=trace_uuid,
+            parent_observation_id=uuid.UUID(rec.parent_observation_id) if rec.parent_observation_id else None,
+            type=type_map.get(rec.type, ObservationType.EVENT),
+            name=rec.name,
+            level=level_map.get(rec.level, ObservationLevel.DEFAULT),
+            status=status_map.get(rec.status, ObservationStatus.COMPLETED),
+            status_message=rec.status_message,
+            start_time=datetime.fromtimestamp(rec.start_time / 1000, tz=timezone.utc),
+            end_time=datetime.fromtimestamp(rec.end_time / 1000, tz=timezone.utc) if rec.end_time else None,
+            duration_ms=rec.duration_ms,
+            completion_start_time=(
+                datetime.fromtimestamp(rec.completion_start_time / 1000, tz=timezone.utc)
+                if rec.completion_start_time
+                else None
+            ),
+            input=rec.input_data,
+            output=rec.output_data,
+            model_name=rec.model_name,
+            model_provider=rec.model_provider,
+            model_parameters=rec.model_parameters,
+            prompt_tokens=rec.prompt_tokens,
+            completion_tokens=rec.completion_tokens,
+            total_tokens=rec.total_tokens,
+            metadata_=rec.metadata,
+            version=rec.version,
+        )
+        db_observations.append(obs)
+
+    # 事务安全批量写入
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            session.add(trace)
+            session.add_all(db_observations)
+        # commit 在 begin() 退出时自动执行
+    log.info(f"Persisted trace {state.trace_id} with {len(db_observations)} observations | thread={state.thread_id}")
 
 
 # ==================== Database Operations ====================
@@ -304,8 +459,24 @@ async def save_assistant_message(
     await db.commit()
 
 
-# ==================== Event Handlers ====================
-# 事件处理逻辑已抽取到 app.utils.stream_event_handler.StreamEventHandler
+# ==================== Event Dispatch Helpers ====================
+
+
+def _extract_run_ids(event_dict: dict) -> tuple[str, str | None]:
+    """
+    从 LangGraph v2 事件中提取 run_id 和 parent_run_id。
+
+    LangGraph v2 astream_events 的每个事件包含:
+    - run_id: 当前事件的唯一标识（可能为 UUID 或 str）
+    - parent_ids: list, 从 root 到 immediate parent 排列
+
+    统一转为 str，避免 UUID 作为 dict key 的兼容性问题。
+    """
+    raw_run_id = event_dict.get("run_id")
+    run_id = str(raw_run_id) if raw_run_id else ""
+    parent_ids = event_dict.get("parent_ids", [])
+    parent_run_id = str(parent_ids[-1]) if parent_ids else None
+    return run_id, parent_run_id
 
 
 # ==================== Endpoints ====================
@@ -479,11 +650,17 @@ async def chat_stream(
 
     # Get initial context from graph.variables.context if graph_id is provided
     initial_context = base_context.copy()
+    graph_workspace_id: str | None = None
+    graph_display_name: str | None = None
     if payload.graph_id:
         from app.repositories.graph import GraphRepository
 
         graph_repo = GraphRepository(db)
         graph_model = await graph_repo.get(payload.graph_id)
+        if graph_model:
+            ws_id = getattr(graph_model, "workspace_id", None)
+            graph_workspace_id = str(ws_id) if ws_id else None
+            graph_display_name = getattr(graph_model, "name", None) or getattr(graph_model, "title", None)
         if graph_model and graph_model.variables:
             context_vars = graph_model.variables.get("context", {})
             if context_vars:
@@ -555,8 +732,10 @@ async def chat_stream(
                     break
 
                 # B. 事件分发
+                # 显式标注为 dict[str, Any]，避免 LangGraph 事件类型在 mypy 下被推断为非 dict
+                event_dict: dict[str, Any]
                 if isinstance(event, dict):
-                    event_dict = event
+                    event_dict = event  # type: ignore[assignment]
                 else:
                     # Convert event to dict if needed
                     event_dict = {"event": str(type(event).__name__), "data": event} if event else {}
@@ -575,43 +754,39 @@ async def chat_stream(
                     and "chat" not in event_name.lower()
                 )
 
+                # 提取 run_id / parent_run_id（LangGraph v2）
+                run_id, parent_run_id = _extract_run_ids(event_dict)
+
                 if event_type == "on_chat_model_start":
-                    yield await handler.handle_chat_model_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_chat_model_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_chat_model_stream":
-                    if sse := await handler.handle_chat_model_stream(event_dict, state):  # type: ignore[arg-type]
+                    if sse := await handler.handle_chat_model_stream(event_dict, state, run_id, parent_run_id):
                         yield sse
 
                 elif event_type == "on_chat_model_end":
-                    yield await handler.handle_chat_model_end(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_chat_model_end(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_tool_start":
-                    yield await handler.handle_tool_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_tool_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_tool_end":
-                    yield await handler.handle_tool_end(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_tool_end(event_dict, state, run_id, parent_run_id)
 
                 # 节点生命周期事件
                 elif event_type == "on_chain_start" and is_node_event:
-                    yield await handler.handle_node_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_node_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_chain_end":
                     # 如果是节点结束事件，发送节点结束事件（可能返回多个事件）
                     if is_node_event:
-                        result = await handler.handle_node_end(event_dict, state)  # type: ignore[arg-type]
-                        # handle_node_end 现在返回多个事件（用换行分隔）或单个事件
-                        if isinstance(result, str):
-                            # 如果是单个字符串，可能包含多个事件（用 \n\n 分隔）
-                            for event_str in result.split("\n\n"):
-                                if event_str.strip():
-                                    yield event_str.strip() + "\n\n"
-                        elif isinstance(result, list):
-                            # 如果是列表，逐个发送
+                        result = await handler.handle_node_end(event_dict, state, run_id, parent_run_id)
+                        # handle_node_end 返回 list[str]
+                        if isinstance(result, list):
                             for event_str in result:
-                                if event_str.strip():
+                                if event_str and event_str.strip():
                                     yield event_str.strip() + "\n\n"
-                        else:
-                            # 单个事件字符串
+                        elif isinstance(result, str) and result.strip():
                             yield result
 
                     # C. 收集完整消息 (但不发送 SSE，仅用于最终状态确认)
@@ -701,8 +876,11 @@ async def chat_stream(
         except Exception as e:
             import traceback
 
-            log.error(f"Stream error: {e}, traceback: {traceback.format_exc()}")
-            state.has_error = True
+            if GraphBubbleUp is not None and type(e) is GraphBubbleUp:
+                log.debug(f"Control flow exception (GraphBubbleUp), not marking trace as failed: {e}")
+            else:
+                log.error(f"Stream error: {e}, traceback: {traceback.format_exc()}")
+                state.has_error = True
             yield handler.format_sse("error", {"message": str(e), "_meta": {"node_name": "system"}}, thread_id)
         finally:
             # 7. 清理与持久化 (关键：使用 finally 确保即使报错/断连也执行)
@@ -714,7 +892,15 @@ async def chat_stream(
                 log.warning(f"Failed to unregister task for thread {thread_id}: {e}")
 
             try:
-                await save_run_result(thread_id, state, log)
+                await save_run_result(
+                    thread_id,
+                    state,
+                    log,
+                    graph_id=str(payload.graph_id) if payload.graph_id else None,
+                    workspace_id=graph_workspace_id,
+                    user_id=str(current_user.id),
+                    graph_name=graph_display_name,
+                )
             except asyncio.CancelledError:
                 # 在请求取消/连接终止时被打断是预期行为
                 log.debug(f"save_run_result cancelled in finally for thread {thread_id}")
@@ -807,6 +993,21 @@ async def chat_resume(
     # Type narrowing: graph_id is guaranteed to be UUID after check
     assert graph_id is not None
 
+    # 3a. 尝试从 Graph 模型补齐 workspace_id / graph_name，便于 Trace 归档与查询
+    graph_workspace_id: str | None = None
+    graph_display_name: str | None = None
+    try:
+        from app.repositories.graph import GraphRepository
+
+        graph_repo = GraphRepository(db)
+        graph_model = await graph_repo.get(graph_id)
+        if graph_model:
+            ws_id = getattr(graph_model, "workspace_id", None)
+            graph_workspace_id = str(ws_id) if ws_id else None
+            graph_display_name = getattr(graph_model, "name", None) or getattr(graph_model, "title", None)
+    except Exception as e:
+        log.warning(f"Failed to load graph metadata for trace persistence | graph_id={graph_id} | error={e}")
+
     try:
         graph_service = GraphService(db)
         graph = await graph_service.create_graph_by_graph_id(
@@ -870,8 +1071,9 @@ async def chat_resume(
                     break
 
                 # B. 事件分发（复用 chat_stream 的逻辑）
+                event_dict: dict[str, Any]
                 if isinstance(event, dict):
-                    event_dict = event
+                    event_dict = event  # type: ignore[assignment]
                 else:
                     # Convert event to dict if needed
                     event_dict = {"event": str(type(event).__name__), "data": event} if event else {}
@@ -889,34 +1091,38 @@ async def chat_resume(
                     and "chat" not in event_name.lower()
                 )
 
+                # 提取 run_id / parent_run_id（LangGraph v2）
+                run_id, parent_run_id = _extract_run_ids(event_dict)
+
                 if event_type == "on_chat_model_start":
-                    yield await handler.handle_chat_model_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_chat_model_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_chat_model_stream":
-                    if sse := await handler.handle_chat_model_stream(event_dict, state):  # type: ignore[arg-type]
+                    if sse := await handler.handle_chat_model_stream(event_dict, state, run_id, parent_run_id):
                         yield sse
 
                 elif event_type == "on_chat_model_end":
-                    yield await handler.handle_chat_model_end(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_chat_model_end(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_tool_start":
-                    yield await handler.handle_tool_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_tool_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_tool_end":
-                    yield await handler.handle_tool_end(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_tool_end(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_chain_start" and is_node_event:
-                    yield await handler.handle_node_start(event_dict, state)  # type: ignore[arg-type]
+                    yield await handler.handle_node_start(event_dict, state, run_id, parent_run_id)
 
                 elif event_type == "on_chain_end":
                     if is_node_event:
-                        result = await handler.handle_node_end(event_dict, state)  # type: ignore[arg-type]
-                        # handle_node_end 现在返回多个事件（用换行分隔）或单个事件
-                        if result and isinstance(result, str):
-                            # 如果包含多个事件（用 \n\n 分隔），逐个发送
-                            for event_str in result.split("\n\n"):
-                                if event_str.strip():
+                        result = await handler.handle_node_end(event_dict, state, run_id, parent_run_id)
+                        # handle_node_end 返回 list[str]
+                        if isinstance(result, list):
+                            for event_str in result:
+                                if event_str and event_str.strip():
                                     yield event_str.strip() + "\n\n"
+                        elif isinstance(result, str) and result.strip():
+                            yield result
 
                     data_raw: Any = event_dict.get("data", {})
                     data: Dict[str, Any] = data_raw if isinstance(data_raw, dict) else {}  # type: ignore[assignment]
@@ -992,12 +1198,23 @@ async def chat_resume(
             log.warning(f"Client disconnected: {thread_id}")
             state.stopped = True
         except Exception as e:
-            log.error(f"Resume stream error: {e}")
-            state.has_error = True
+            if GraphBubbleUp is not None and type(e) is GraphBubbleUp:
+                log.debug(f"Control flow exception (GraphBubbleUp), not marking trace as failed: {e}")
+            else:
+                log.error(f"Resume stream error: {e}")
+                state.has_error = True
             yield handler.format_sse("error", {"message": str(e), "_meta": {"node_name": "system"}}, thread_id)
         finally:
             await task_manager.unregister_task(thread_id)
-            await save_run_result(thread_id, state, log)
+            await save_run_result(
+                thread_id,
+                state,
+                log,
+                graph_id=str(graph_id) if graph_id else None,
+                workspace_id=graph_workspace_id,
+                user_id=str(current_user.id),
+                graph_name=graph_display_name,
+            )
             # Cleanup shared backend if exists
             if "graph" in locals() and hasattr(graph, "_cleanup_backend"):
                 try:

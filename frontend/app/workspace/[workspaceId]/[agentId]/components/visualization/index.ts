@@ -1,12 +1,6 @@
 /**
- * Visualization Components for Command Mode
- *
- * Components for visualizing execution state, routing decisions, loops, and parallel execution
+ * Visualization types for Command Mode execution state.
+ * Components (ExecutionControlPanel, StateViewer, etc.) were removed as unused.
  */
 
-export { StateViewer, type GraphState, type TaskState } from './StateViewer'
-export { RouteDecisionDisplay, type RouteDecision } from './RouteDecisionDisplay'
-export { LoopExecutionView } from './LoopExecutionView'
-export { ParallelExecutionView } from './ParallelExecutionView'
-export { ExecutionTrace, type TraceStep } from './ExecutionTrace'
-export { ExecutionControlPanel } from './ExecutionControlPanel'
+export type { GraphState, TaskState, TraceStep } from './types'

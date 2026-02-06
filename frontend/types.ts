@@ -181,6 +181,47 @@ export interface ExecutionStep {
   duration?: number;
   content?: string;  // For streaming text content (agent_thought)
   data?: ToolExecutionData | any;  // For structured data (tool arguments/results)
+  // Trace / Observation 层级信息 (Phase D)
+  traceId?: string;
+  observationId?: string;
+  parentObservationId?: string;
+  // Token usage (from GENERATION observations)
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
+// ============ Execution Tree Types (Langfuse-style trace tree) ============
+
+export type ExecutionTreeNodeType = 'TRACE' | 'NODE' | 'TOOL' | 'MODEL' | 'THOUGHT' | 'CODE_AGENT';
+
+export type ExecutionTreeNode = {
+  id: string;
+  type: ExecutionTreeNodeType;
+  name: string;
+  startTime: number;
+  endTime?: number;
+  duration?: number;
+  status: ExecutionStepStatus;
+  children: ExecutionTreeNode[];
+  depth: number;
+  /** Max depth of subtree rooted at this node (0 for leaf nodes) */
+  childrenDepth: number;
+  /** Milliseconds from trace start to this node's start time */
+  startTimeSinceTrace: number;
+  /** Original step data reference */
+  step?: ExecutionStep;
+  /** Parent node ID */
+  parentId?: string;
+}
+
+/** Flattened tree node for virtualized rendering */
+export interface ExecutionTreeFlatItem {
+  node: ExecutionTreeNode;
+  /** Whether this node is expanded in the tree view */
+  isExpanded: boolean;
+  /** Whether this node has children */
+  hasChildren: boolean;
 }
 
 // StreamManager types for execution state management

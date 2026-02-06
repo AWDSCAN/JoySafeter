@@ -13,32 +13,50 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional, Type
+
+if TYPE_CHECKING:
+    from deepagents import SubAgent as SubAgentT
+    from deepagents.backends.filesystem import FilesystemBackend as FilesystemBackendT
 
 from langchain_core.runnables import Runnable
 from loguru import logger
 
-from app.core.copilot.tool_output_parser import parse_tool_output
-
-try:
-    from deepagents import FilesystemMiddleware, SubAgent, create_deep_agent
-    from deepagents.backends.filesystem import FilesystemBackend
-
-    DEEPAGENTS_AVAILABLE = True
-except ImportError:
-    create_deep_agent = None
-    FilesystemMiddleware = None
-    FilesystemBackend = None
-    SubAgent = None
-    DEEPAGENTS_AVAILABLE = False
-    logger.warning("[DeepAgentsCopilot] deepagents library not available")
-
 from app.core.agent.sample_agent import get_default_model
+from app.core.copilot.tool_output_parser import parse_tool_output
 from app.core.copilot.tools import connect_nodes, create_node, delete_node, update_config
 
 from .artifacts import ArtifactStore
 from .layout import apply_auto_layout, calculate_optimal_spacing, center_graph_on_canvas
 from .schemas import ValidationReport, WorkflowBlueprint
+
+# ==================== Optional deepagents imports ====================
+# 先声明为可选，避免在 except 中赋 None 触发 mypy "Cannot assign to a type"
+create_deep_agent: Any = None
+FilesystemMiddleware: Type[Any] | None = None
+FilesystemBackend: Type[Any] | None = None
+SubAgent: Type[Any] | None = None
+DEEPAGENTS_AVAILABLE = False
+
+try:
+    from deepagents import (
+        FilesystemMiddleware as _FilesystemMiddleware,
+    )
+    from deepagents import (
+        SubAgent as _SubAgent,
+    )
+    from deepagents import (
+        create_deep_agent as _create_deep_agent,
+    )
+    from deepagents.backends.filesystem import FilesystemBackend as _FilesystemBackend
+
+    create_deep_agent = _create_deep_agent
+    FilesystemMiddleware = _FilesystemMiddleware
+    FilesystemBackend = _FilesystemBackend
+    SubAgent = _SubAgent
+    DEEPAGENTS_AVAILABLE = True
+except ImportError:
+    logger.warning("[DeepAgentsCopilot] deepagents library not available")
 
 # ==================== Manager System Prompt ====================
 
@@ -600,7 +618,7 @@ def get_artifacts_root() -> Path:
     return Path(root)
 
 
-def _build_subagents(backend: "FilesystemBackend") -> List["SubAgent"]:
+def _build_subagents(backend: "FilesystemBackendT") -> List["SubAgentT"]:
     """
     构建子代理列表。
 
@@ -670,8 +688,9 @@ def create_copilot_manager(
     Returns:
         (manager_agent, artifact_store)
     """
-    if not DEEPAGENTS_AVAILABLE:
+    if not DEEPAGENTS_AVAILABLE or create_deep_agent is None or FilesystemBackend is None:
         raise RuntimeError("deepagents library not available. Install with: pip install deepagents")
+    assert create_deep_agent is not None and FilesystemBackend is not None  # 供 mypy 收窄类型
 
     # 生成 run_id
     if not run_id:

@@ -24,6 +24,8 @@ export function createEmptyGraphState(): GraphExecutionState {
     currentState: null,
     executionTrace: [],
     routeDecisions: [],
+    treeRoots: [],
+    treeNodeMap: new Map(),
   }
 }
 
