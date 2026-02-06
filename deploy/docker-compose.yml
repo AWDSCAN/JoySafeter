@@ -87,6 +87,7 @@ services:
       # 挂载日志目录（使用 Docker volume 避免权限问题）
       - backend-logs:/app/app/logs
       - backend-files:/app/data/files  # 文件存储 volume（持久化用户上传的文件）
+      - ../skills:/app/skills  # 自动加载 Skills
       - /usr/bin/docker:/usr/bin/docker
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:

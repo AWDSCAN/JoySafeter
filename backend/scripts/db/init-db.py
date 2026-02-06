@@ -148,6 +148,51 @@ def run_migrations(config):
         return False
 
 
+def run_skill_loader():
+    """运行 Skill 加载脚本"""
+    print("📦 正在加载 Skills...")
+
+    # 自动检测工作目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if "/scripts/db" in script_dir or "\\scripts\\db" in script_dir:
+        # 本地运行：backend/scripts/db/init-db.py -> backend/scripts/load_skills.py
+        loader_script = os.path.join(os.path.dirname(script_dir), "load_skills.py")
+    elif script_dir.startswith("/app"):
+        # Docker 容器运行
+        loader_script = "/app/scripts/load_skills.py"
+    else:
+        # 默认尝试
+        loader_script = "scripts/load_skills.py"
+
+    if not os.path.exists(loader_script):
+        print(f"⚠️  Skill 加载脚本未找到: {loader_script}")
+        return False
+
+    try:
+        # 使用当前环境变量运行
+        result = subprocess.run(
+            [sys.executable, loader_script],
+            capture_output=True,
+            text=True,
+            env=os.environ.copy()
+        )
+
+        if result.returncode == 0:
+            print("✅ Skills 加载完成")
+            if result.stdout:
+                print(result.stdout)
+            return True
+        else:
+            print("❌ Skills 加载失败")
+            if result.stderr:
+                print(result.stderr)
+            print(result.stdout) # 打印 stdout 以便调试
+            return False
+    except Exception as e:
+        print(f"❌ 执行 Skill 加载脚本出错: {e}")
+        return False
+
+
 def main():
     """主函数"""
     # 获取数据库配置
@@ -178,6 +223,9 @@ def main():
 
     # 4. 修复 collation 警告（可选）
     fix_collation_warning(config)
+
+    # 5. 加载 Skills
+    run_skill_loader()
 
     print("=" * 60)
     print("✅ 数据库初始化完成！")
