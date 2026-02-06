@@ -5,7 +5,8 @@ Skill 服务：权限校验 + CRUD
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 from loguru import logger
 
@@ -666,3 +667,115 @@ class SkillService(BaseService[Skill]):
             return None
 
         return next((f for f in skill.files if f.path == "SKILL.md" or f.file_name == "SKILL.md"), None)
+
+    async def import_skill_from_directory(self, skill_dir: str, owner_id: str) -> Skill:
+        """从目录导入 Skill
+
+        Args:
+            skill_dir: Skill 目录路径 (包含 SKILL.md)
+            owner_id: 所有者 ID
+
+        Returns:
+            创建或更新的 Skill 对象
+        """
+        from pathlib import Path
+
+        from app.core.skill.yaml_parser import extract_metadata_from_frontmatter, parse_skill_md
+
+        skill_path = Path(skill_dir)
+        if not skill_path.exists():
+            raise FileNotFoundError(f"Skill directory not found: {skill_dir}")
+
+        # 查找 SKILL.md
+        skill_md_path = skill_path / "SKILL.md"
+        if not skill_md_path.exists():
+            # 尝试小写
+            skill_md_path = skill_path / "skill.md"
+
+        if not skill_md_path.exists():
+            raise FileNotFoundError(f"SKILL.md not found in {skill_dir}")
+
+        # 读取 SKILL.md
+        with open(skill_md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 解析元数据
+        frontmatter, body = parse_skill_md(content)
+        metadata = extract_metadata_from_frontmatter(frontmatter)
+
+        name = metadata.get("name", skill_path.name)
+        description = metadata.get("description", "")
+
+        # 准备文件列表
+        files = []
+
+        # 添加 SKILL.md
+        files.append({"path": "SKILL.md", "file_name": "SKILL.md", "content": content, "file_type": "markdown"})
+
+        # 递归读取其他文件
+        for file_path in skill_path.rglob("*"):
+            if file_path.is_file() and file_path.name.lower() != "skill.md" and not file_path.name.startswith("."):
+                try:
+                    rel_path = file_path.relative_to(skill_path)
+
+                    # 简单检测二进制文件 (通过尝试 utf-8 读取)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            file_content = f.read()
+
+                        files.append(
+                            {
+                                "path": str(rel_path),
+                                "file_name": file_path.name,
+                                "content": file_content,
+                                "file_type": self._detect_file_type(file_path),
+                            }
+                        )
+                    except UnicodeDecodeError:
+                        # 跳过二进制文件
+                        continue
+                except Exception:
+                    continue
+
+        # 检查是否已存在
+        try:
+            existing_skill = await self.get_skill_by_name(name, current_user_id=owner_id)
+        except Exception:
+            existing_skill = None
+
+        if existing_skill:
+            return await self.update_skill(
+                skill_id=existing_skill.id,
+                current_user_id=owner_id,
+                name=name,
+                description=description,
+                files=files,
+                is_public=True,
+            )
+        else:
+            return await self.create_skill(
+                created_by_id=owner_id,
+                name=name,
+                description=description,
+                content=body,
+                files=files,
+                owner_id=owner_id,
+                is_public=True,
+            )
+
+    def _detect_file_type(self, file_path: Union[str, Path]) -> str:
+        """简单检测文件类型"""
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+
+        suffix = file_path.suffix.lower()
+        if suffix == ".py":
+            return "python"
+        elif suffix == ".md":
+            return "markdown"
+        elif suffix == ".json":
+            return "json"
+        elif suffix == ".yaml" or suffix == ".yml":
+            return "yaml"
+        else:
+            return "text"

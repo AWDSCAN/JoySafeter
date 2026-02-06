@@ -170,12 +170,7 @@ def run_skill_loader():
 
     try:
         # 使用当前环境变量运行
-        result = subprocess.run(
-            [sys.executable, loader_script],
-            capture_output=True,
-            text=True,
-            env=os.environ.copy()
-        )
+        result = subprocess.run([sys.executable, loader_script], capture_output=True, text=True, env=os.environ.copy())
 
         if result.returncode == 0:
             print("✅ Skills 加载完成")
@@ -186,7 +181,7 @@ def run_skill_loader():
             print("❌ Skills 加载失败")
             if result.stderr:
                 print(result.stderr)
-            print(result.stdout) # 打印 stdout 以便调试
+            print(result.stdout)  # 打印 stdout 以便调试
             return False
     except Exception as e:
         print(f"❌ 执行 Skill 加载脚本出错: {e}")
