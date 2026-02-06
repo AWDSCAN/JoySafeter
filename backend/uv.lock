@@ -831,7 +831,7 @@ wheels = [
 
 [[package]]
 name = "deepagents"
-version = "0.3.8"
+version = "0.3.11"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "langchain" },
@@ -840,9 +840,9 @@ dependencies = [
     { name = "langchain-google-genai" },
     { name = "wcmatch" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/47/69/d8dd80dd5c0c81393cc32623dd51e642c8607ab798276506b3b3e89b1f20/deepagents-0.3.8.tar.gz", hash = "sha256:4b8252f8deaad449ce39426cc2233a597ee079b9b690647a26d128c16d6c6eb8", size = 73956, upload-time = "2026-01-22T18:33:43.905Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/c6/41/097d592a95488ba1c770ed2a1c027bfb750f2d62cc19eaac885caa5b2fe8/deepagents-0.3.11.tar.gz", hash = "sha256:c57852977785acde803d9d04d7d8c0d17b2b458c7a99d21a8d99264384570fd6", size = 76409, upload-time = "2026-02-04T16:22:06.479Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/a6/6a/35968909bd3184eafee97326bcfd16c99bf9b0e03aadb3327eaf7229ea11/deepagents-0.3.8-py3-none-any.whl", hash = "sha256:7c76205dc014173d795402045b51505517954c7c4a508175f8e4a529f51928cc", size = 79161, upload-time = "2026-01-22T18:33:42.831Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/19/8f/183998b9359c8ba53042fbe2a9ac93ab3d3f8f2d681281f158c4881ad2e7/deepagents-0.3.11-py3-none-any.whl", hash = "sha256:8dcd282c6b43527d209b9fbc96e48e50617340af90c3fd5cfc511fbcb6b4595c", size = 86871, upload-time = "2026-02-04T16:22:05.464Z" },
 ]
 
 [[package]]
@@ -1649,7 +1649,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "beautifulsoup4", specifier = ">=4.14.2" },
-    { name = "deepagents", specifier = ">=0.3.8" },
+    { name = "deepagents", specifier = ">=0.3.11" },
     { name = "docker", specifier = ">=7.1.0" },
     { name = "email-validator", specifier = ">=2.0.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.122.0" },
@@ -1663,7 +1663,7 @@ requires-dist = [
     { name = "langchain-mcp-adapters", specifier = ">=0.1.13" },
     { name = "langchain-openai", specifier = ">=1.0.0" },
     { name = "langfuse", specifier = ">=3.11.1" },
-    { name = "langgraph", specifier = ">=1.0.5" },
+    { name = "langgraph", specifier = ">=1.0.7" },
     { name = "langgraph-checkpoint", specifier = ">=2.0.0" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.0.2" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -1805,16 +1805,16 @@ wheels = [
 
 [[package]]
 name = "langchain"
-version = "1.2.6"
+version = "1.2.8"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "langgraph" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/f5/bc/d8f506a525baadee99a65c6cc28c1c35c9eaf1cb2009f048e9861d81a600/langchain-1.2.6.tar.gz", hash = "sha256:7d46cbf719d860a16f6fc182d5d3de17453dda187f3d43e9c40ac352a5094fdd", size = 553127, upload-time = "2026-01-16T19:21:19.611Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/52/b7/a1d95dbb58e5e82dbd05e3730e2d4b99f784a4c6d39435579a1c2b8a8d12/langchain-1.2.8.tar.gz", hash = "sha256:d2bc45f8279f6291b152f28df3bb060b27c9a71163fe2e2a1ac878bd314d0dec", size = 558326, upload-time = "2026-02-02T15:51:59.425Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/3f/28/d5dc4cb06ccb29d62a590d446072964766555e85863f5044c6e644c07d0d/langchain-1.2.6-py3-none-any.whl", hash = "sha256:a9a6c39f03c09b6eb0f1b47e267ad2a2fd04e124dfaa9753bd6c11d2fe7d944e", size = 108458, upload-time = "2026-01-16T19:21:18.085Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/66/1a/e1cabc08d8b12349fa6a898f033cc6b00a9a031b470582f4a9eb4cf8e55b/langchain-1.2.8-py3-none-any.whl", hash = "sha256:74a9595420b90e2fd6dc42e323e5e6c9f2a5d059b0ab51e4ad383893b86f8fbe", size = 108986, upload-time = "2026-02-02T15:51:58.465Z" },
 ]
 
 [[package]]
@@ -1833,7 +1833,7 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "1.2.7"
+version = "1.2.9"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "jsonpatch" },
@@ -1845,9 +1845,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uuid-utils" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/a2/0e/664d8d81b3493e09cbab72448d2f9d693d1fa5aa2bcc488602203a9b6da0/langchain_core-1.2.7.tar.gz", hash = "sha256:e1460639f96c352b4a41c375f25aeb8d16ffc1769499fb1c20503aad59305ced", size = 837039, upload-time = "2026-01-09T17:44:25.505Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/a6/85/f501592b5d76b27a198f1102bafe365151a0a6f69444122fad6d10e6f4bf/langchain_core-1.2.9.tar.gz", hash = "sha256:a3768febc762307241d153b0f8bc58fd4b70c0ff077fda3274606741fca3f5a7", size = 815900, upload-time = "2026-02-05T14:21:43.942Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/6e/6f/34a9fba14d191a67f7e2ee3dbce3e9b86d2fa7310e2c7f2c713583481bd2/langchain_core-1.2.7-py3-none-any.whl", hash = "sha256:452f4fef7a3d883357b22600788d37e3d8854ef29da345b7ac7099f33c31828b", size = 490232, upload-time = "2026-01-09T17:44:24.236Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/94/46/77846a98913e444d0d564070a9056bd999daada52bd099dc1e8812272810/langchain_core-1.2.9-py3-none-any.whl", hash = "sha256:7e5ecba5ed7a65852e8d5288e9ceeba05340fa9baf32baf672818b497bbaea8f", size = 496296, upload-time = "2026-02-05T14:21:42.816Z" },
 ]
 
 [[package]]
@@ -1916,7 +1916,7 @@ wheels = [
 
 [[package]]
 name = "langgraph"
-version = "1.0.5"
+version = "1.0.7"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "langchain-core" },
@@ -1926,9 +1926,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/7d/47/28f4d4d33d88f69de26f7a54065961ac0c662cec2479b36a2db081ef5cb6/langgraph-1.0.5.tar.gz", hash = "sha256:7f6ae59622386b60fe9fa0ad4c53f42016b668455ed604329e7dc7904adbf3f8", size = 493969, upload-time = "2025-12-12T23:05:48.224Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/72/5b/f72655717c04e33d3b62f21b166dc063d192b53980e9e3be0e2a117f1c9f/langgraph-1.0.7.tar.gz", hash = "sha256:0cfdfee51e6e8cfe503ecc7367c73933437c505b03fa10a85c710975c8182d9a", size = 497098, upload-time = "2026-01-22T16:57:47.303Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/23/1b/e318ee76e42d28f515d87356ac5bd7a7acc8bad3b8f54ee377bef62e1cbf/langgraph-1.0.5-py3-none-any.whl", hash = "sha256:b4cfd173dca3c389735b47228ad8b295e6f7b3df779aba3a1e0c23871f81281e", size = 157056, upload-time = "2025-12-12T23:05:46.499Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/7e/0e/fe80144e3e4048e5d19ccdb91ac547c1a7dc3da8dbd1443e210048194c14/langgraph-1.0.7-py3-none-any.whl", hash = "sha256:9d68e8f8dd8f3de2fec45f9a06de05766d9b075b78fb03171779893b7a52c4d2", size = 157353, upload-time = "2026-01-22T16:57:45.997Z" },
 ]
 
 [[package]]
@@ -1961,15 +1961,15 @@ wheels = [
 
 [[package]]
 name = "langgraph-prebuilt"
-version = "1.0.5"
+version = "1.0.7"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "langgraph-checkpoint" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/46/f9/54f8891b32159e4542236817aea2ee83de0de18bce28e9bdba08c7f93001/langgraph_prebuilt-1.0.5.tar.gz", hash = "sha256:85802675ad778cc7240fd02d47db1e0b59c0c86d8369447d77ce47623845db2d", size = 144453, upload-time = "2025-11-20T16:47:39.23Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/a7/59/711aecd1a50999456850dc328f3cad72b4372d8218838d8d5326f80cb76f/langgraph_prebuilt-1.0.7.tar.gz", hash = "sha256:38e097e06de810de4d0e028ffc0e432bb56d1fb417620fb1dfdc76c5e03e4bf9", size = 163692, upload-time = "2026-01-22T16:45:22.801Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/87/5e/aeba4a5b39fe6e874e0dd003a82da71c7153e671312671a8dacc5cb7c1af/langgraph_prebuilt-1.0.5-py3-none-any.whl", hash = "sha256:22369563e1848862ace53fbc11b027c28dd04a9ac39314633bb95f2a7e258496", size = 35072, upload-time = "2025-11-20T16:47:38.187Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/47/49/5e37abb3f38a17a3487634abc2a5da87c208cc1d14577eb8d7184b25c886/langgraph_prebuilt-1.0.7-py3-none-any.whl", hash = "sha256:e14923516504405bb5edc3977085bc9622c35476b50c1808544490e13871fe7c", size = 35324, upload-time = "2026-01-22T16:45:21.784Z" },
 ]
 
 [[package]]

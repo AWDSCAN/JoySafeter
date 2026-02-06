@@ -27,11 +27,11 @@ dependencies = [
     "langchain>=1.2.0",
     "langchain-core>=1.2.5",
     "langchain-openai>=1.0.0",
-    "langgraph>=1.0.5",
+    "langgraph>=1.0.7",
     "langgraph-checkpoint>=2.0.0",
     "langgraph-checkpoint-postgres>=3.0.2",
     "langchain-mcp-adapters>=0.1.13",
-    "deepagents>=0.3.8",
+    "deepagents>=0.3.11",
     "pydantic-ai-backend[docker]>=0.1.5",
     # MCP
     "mcp>=1.20.0",
