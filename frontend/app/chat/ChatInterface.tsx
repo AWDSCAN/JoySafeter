@@ -268,10 +268,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   // Handle new chat
   const handleNewChat = useCallback(() => {
+    // Navigate to base /chat to clear thread param and reset state via page prop update
+    router.push('/chat')
+    // We also clear local state immediately for perceived performance, though prop update will handle consistency
     setMessages([])
     setLocalChatId(null)
     setSelectedTool(null)
-  }, [])
+    setCurrentMode(undefined)
+    setHasShownApkPrompt(false)
+    setCurrentGraphId(null)
+  }, [router])
 
   // Handle tool click
   const handleToolClick = useCallback((toolCall: ToolCall) => {
@@ -336,8 +342,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         selectedAgentId: null,
         personalWorkspaceId: workspacesData?.find((w) => w.type === 'personal')?.id || null,
         t,
-        router: { push: () => {} },
-        queryClient: { invalidateQueries: () => {} },
+        router: { push: () => { } },
+        queryClient: { invalidateQueries: () => { } },
       }
       const resolution = await graphResolutionService.resolve(mode, modeContext, false)
       resolvedGraphId = resolution.graphId
@@ -507,68 +513,68 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </TooltipProvider>
               </div>
 
-            {/* Messages - Scrollable area */}
-            <div className={cn(
-              "flex-1 min-h-0 overflow-hidden transition-all duration-200",
-              toolPanelOpen && hasToolCalls && "mr-[616px]"
-            )}>
-              <ThreadContent
-                messages={messages}
-                streamingText={streamingText}
-                agentStatus={agentStatus}
-                currentNodeLabel={currentNodeLabel}
-                onToolClick={handleToolClick}
-                scrollContainerRef={scrollRef}
-              />
-            </div>
-
-            {/* Input Area - Fixed at bottom */}
-            <div className={cn(
-              "flex-shrink-0 px-6 pb-6 pt-2 relative transition-all duration-200 bg-gray-50",
-              toolPanelOpen && hasToolCalls && "pr-[632px]"
-            )}>
-              <ChatInput
-                input={input}
-                setInput={setInput}
-                onSubmit={handleSubmit}
-                isProcessing={isProcessing}
-                onStop={() => stopMessage(localChatId)}
-                currentMode={currentMode}
-                currentGraphId={currentGraphId}
-                compactToolStatus={
-                  !toolPanelOpen && hasToolCalls ? (
-                    <CompactToolStatus
-                      toolCalls={allToolCalls}
-                      onClick={() => setToolPanelOpen(true)}
-                    />
-                  ) : null
-                }
-              />
-            </div>
-
-            {/* Right Side Floating Panel - Tool Execution Panel */}
-            {hasToolCalls && (
-              <div
-                className={cn(
-                  'absolute top-4 right-4 bottom-4 bg-white border border-gray-200 shadow-2xl z-20 rounded-2xl overflow-hidden w-[600px]',
-                  'transition-all duration-200',
-                  toolPanelOpen
-                    ? 'translate-x-0 translate-y-0 opacity-100 scale-100'
-                    : 'translate-x-[-80%] translate-y-[30%] opacity-0 scale-[0.2] pointer-events-none'
-                )}
-                style={{
-                  transitionTimingFunction: toolPanelOpen ? 'cubic-bezier(0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)'
-                }}
-              >
-                <ToolExecutionPanel
-                  isOpen={toolPanelOpen}
-                  onClose={() => setToolPanelOpen(false)}
-                  toolCall={selectedTool}
+              {/* Messages - Scrollable area */}
+              <div className={cn(
+                "flex-1 min-h-0 overflow-hidden transition-all duration-200",
+                toolPanelOpen && hasToolCalls && "mr-[616px]"
+              )}>
+                <ThreadContent
                   messages={messages}
+                  streamingText={streamingText}
                   agentStatus={agentStatus}
+                  currentNodeLabel={currentNodeLabel}
+                  onToolClick={handleToolClick}
+                  scrollContainerRef={scrollRef}
                 />
               </div>
-            )}
+
+              {/* Input Area - Fixed at bottom */}
+              <div className={cn(
+                "flex-shrink-0 px-6 pb-6 pt-2 relative transition-all duration-200 bg-gray-50",
+                toolPanelOpen && hasToolCalls && "pr-[632px]"
+              )}>
+                <ChatInput
+                  input={input}
+                  setInput={setInput}
+                  onSubmit={handleSubmit}
+                  isProcessing={isProcessing}
+                  onStop={() => stopMessage(localChatId)}
+                  currentMode={currentMode}
+                  currentGraphId={currentGraphId}
+                  compactToolStatus={
+                    !toolPanelOpen && hasToolCalls ? (
+                      <CompactToolStatus
+                        toolCalls={allToolCalls}
+                        onClick={() => setToolPanelOpen(true)}
+                      />
+                    ) : null
+                  }
+                />
+              </div>
+
+              {/* Right Side Floating Panel - Tool Execution Panel */}
+              {hasToolCalls && (
+                <div
+                  className={cn(
+                    'absolute top-4 right-4 bottom-4 bg-white border border-gray-200 shadow-2xl z-20 rounded-2xl overflow-hidden w-[600px]',
+                    'transition-all duration-200',
+                    toolPanelOpen
+                      ? 'translate-x-0 translate-y-0 opacity-100 scale-100'
+                      : 'translate-x-[-80%] translate-y-[30%] opacity-0 scale-[0.2] pointer-events-none'
+                  )}
+                  style={{
+                    transitionTimingFunction: toolPanelOpen ? 'cubic-bezier(0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)'
+                  }}
+                >
+                  <ToolExecutionPanel
+                    isOpen={toolPanelOpen}
+                    onClose={() => setToolPanelOpen(false)}
+                    toolCall={selectedTool}
+                    messages={messages}
+                    agentStatus={agentStatus}
+                  />
+                </div>
+              )}
             </div>
           )}
         </ResizablePanel>
