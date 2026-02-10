@@ -6,7 +6,6 @@ Acts as the Single Source of Truth for in-memory tool management.
 """
 
 from collections import OrderedDict
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from langchain_core.tools import BaseTool
@@ -612,8 +611,6 @@ def get_global_registry() -> ToolRegistry:
 def _initialize_builtin_tools(registry: ToolRegistry):
     """Initialize builtin tools in the registry."""
     try:
-        from app.core.tools.buildin.file import FileTools
-        from app.core.tools.buildin.python import PythonTools
         from app.core.tools.buildin.research_tools import tavily_search, think_tool
         from app.core.tools.buildin.skill_management import SkillManagementTools
 
@@ -637,51 +634,6 @@ def _initialize_builtin_tools(registry: ToolRegistry):
         # for frontend display. The actual execution uses instances created in node_tools.py with real user context.
         #
         # NOTE: We use the SAME names as in node_tools.py -> aliases map
-
-        # --- Code Interpreter ---
-        python_tools = PythonTools(base_dir=Path("/tmp"))
-        registry.register_builtin(
-            callable_func=python_tools.run_python_code,
-            name="code_interpreter",
-            description="Execute Python code (dangerous; requires supervision).",
-            category="execution",
-            tags={"python", "code", "execution"},
-        )
-
-        # --- File Tools ---
-        file_tools = FileTools(base_dir=Path("/tmp"))
-
-        registry.register_builtin(
-            callable_func=file_tools.read_file,
-            name="read_file",
-            description="Read a file under the per-user sandbox directory.",
-            category="filesystem",
-            tags={"file", "read"},
-        )
-
-        registry.register_builtin(
-            callable_func=file_tools.list_files,
-            name="list_files",
-            description="List files under the per-user sandbox directory.",
-            category="filesystem",
-            tags={"file", "list"},
-        )
-
-        registry.register_builtin(
-            callable_func=file_tools.search_files,
-            name="search_files",
-            description="Search files under the per-user sandbox directory by glob pattern.",
-            category="filesystem",
-            tags={"file", "search"},
-        )
-
-        registry.register_builtin(
-            callable_func=file_tools.save_file,
-            name="save_file",
-            description="Save a file under the per-user sandbox directory.",
-            category="filesystem",
-            tags={"file", "save", "write"},
-        )
 
         # --- Skill Management ---
         # We use a dummy user_id for registration purposes

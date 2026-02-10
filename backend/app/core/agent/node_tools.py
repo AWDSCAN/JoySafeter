@@ -113,12 +113,8 @@ def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path, user_id: s
 
     # Lazy imports to avoid import-time failures when optional dependencies
     # (e.g. `tavily-python`) are not installed.
-    from app.core.tools.buildin.file import FileTools
-    from app.core.tools.buildin.python import PythonTools
     from app.core.tools.buildin.skill_management import SkillManagementTools
 
-    files = FileTools(base_dir=root_dir)
-    python = PythonTools(base_dir=root_dir)
     skill_mgmt = SkillManagementTools(user_id=user_id)
 
     # Research tools - get from registry only
@@ -133,38 +129,12 @@ def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path, user_id: s
 
     # Canonical mapping for UI-friendly IDs -> tool implementations.
     aliases: Dict[str, Any] = {
-        "code_interpreter": _alias_tool(
-            name="code_interpreter",
-            description="Execute Python code (dangerous; requires supervision).",
-            callable_func=python.run_python_code,
-        ),
         "deploy_local_skill": _alias_tool(
             name="deploy_local_skill",
             description="Deploy a local skill from the sandbox to the system (private).",
             callable_func=skill_mgmt.deploy_local_skill,
         ),
         **research_tools,  # Add research tools to aliases
-        # Some additional useful primitives (if UI sends them)
-        "read_file": _alias_tool(
-            name="read_file",
-            description="Read a file under the per-user sandbox directory.",
-            callable_func=files.read_file,
-        ),
-        "list_files": _alias_tool(
-            name="list_files",
-            description="List files under the per-user sandbox directory.",
-            callable_func=files.list_files,
-        ),
-        "search_files": _alias_tool(
-            name="search_files",
-            description="Search files under the per-user sandbox directory by glob pattern.",
-            callable_func=files.search_files,
-        ),
-        "save_file": _alias_tool(
-            name="save_file",
-            description="Save a file under the per-user sandbox directory.",
-            callable_func=files.save_file,
-        ),
     }
 
     resolved: List[Any] = []
