@@ -76,9 +76,6 @@ providers:
       name: "name"
       avatar: "picture"
 
-<<<<<<< HEAD
-# ==================== 全局设置 ====================
-=======
   # JD SSA (non-standard OAuth2)
   # Note: callback domain must be under *.jd.com or JD-allowed domains
   jd:
@@ -98,7 +95,6 @@ providers:
       name: "username"
       avatar: ""
 
->>>>>>> 27f6a1c (update show name)
 settings:
   default_redirect_url: "/chat"
   allow_registration: true
