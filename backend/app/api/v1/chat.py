@@ -45,8 +45,6 @@ from app.common.exceptions import (
     raise_internal_error,
     raise_not_found_error,
 )
-from app.core.agent.checkpointer.checkpointer import get_checkpointer
-from app.core.agent.sample_agent import get_agent
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.settings import settings
 from app.models import Conversation, Message
@@ -387,7 +385,7 @@ async def get_user_config(user_id: str, thread_id: str, db: AsyncSession):
 
     config: RunnableConfig = {
         "configurable": {"thread_id": thread_id, "user_id": str(user_id)},
-        "recursion_limit": 100,
+        "recursion_limit": 150,
         "callbacks": get_langfuse_callbacks(enabled=settings.langfuse_enabled),
     }
 
@@ -550,11 +548,11 @@ async def chat(
                         else:
                             initial_context[key] = value
 
-        # Create graph: use default agent if graph_id is None, otherwise use graph from database
+        # Create graph: use default DeepAgents single-node if graph_id is None, otherwise use graph from database
+        graph_service = GraphService(db)
         if payload.graph_id is None:
-            log.info("[Chat API] Using default agent (graph_id is None)")
-            graph = await get_agent(
-                checkpointer=get_checkpointer(),
+            log.info("[Chat API] Using default DeepAgents single-node (graph_id is None)")
+            graph = await graph_service.create_default_deep_agents_graph(
                 llm_model=llm_params["llm_model"],
                 api_key=llm_params["api_key"],
                 base_url=llm_params["base_url"],
@@ -562,7 +560,6 @@ async def chat(
                 user_id=str(current_user.id),
             )
         else:
-            graph_service = GraphService(db)
             graph = await graph_service.create_graph_by_graph_id(
                 graph_id=payload.graph_id,
                 llm_model=llm_params["llm_model"],
@@ -684,11 +681,11 @@ async def chat_stream(
         yield handler.format_sse("status", {"status": "connected", "_meta": {"node_name": "system"}}, thread_id)
 
         try:
-            # 3. 创建图: 如果 graph_id 为 None，使用默认 Agent，否则从数据库加载图
+            # 3. 创建图: 如果 graph_id 为 None，使用默认 DeepAgents 单节点，否则从数据库加载图
+            graph_service = GraphService(db)
             if payload.graph_id is None:
-                log.info("[Chat API Stream] Using default agent (graph_id is None)")
-                graph = await get_agent(
-                    checkpointer=get_checkpointer(),
+                log.info("[Chat API Stream] Using default DeepAgents single-node (graph_id is None)")
+                graph = await graph_service.create_default_deep_agents_graph(
                     llm_model=llm_params["llm_model"],
                     api_key=llm_params["api_key"],
                     base_url=llm_params["base_url"],
@@ -696,7 +693,6 @@ async def chat_stream(
                     user_id=str(current_user.id),
                 )
             else:
-                graph_service = GraphService(db)
                 graph = await graph_service.create_graph_by_graph_id(
                     graph_id=payload.graph_id,
                     llm_model=llm_params["llm_model"],
@@ -1064,6 +1060,7 @@ async def chat_resume(
         try:
             # 4. 使用 Command 继续执行
             async for event in graph.astream_events(command, config=config, version="v2"):
+                # log.info(f"Event received | thread_id={thread_id} | event={event}")
                 # A. 停止检测
                 if await task_manager.is_stopped(thread_id):
                     state.stopped = True

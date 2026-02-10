@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.exceptions import BadRequestException, ForbiddenException, NotFoundException
 from app.core.graph.graph_builder_factory import GraphBuilder
 from app.models.auth import AuthUser
-from app.models.graph import AgentGraph, GraphNode
+from app.models.graph import AgentGraph, GraphEdge, GraphNode
 from app.models.workspace import WorkspaceMemberRole
 from app.repositories.graph import GraphEdgeRepository, GraphNodeRepository, GraphRepository
 
@@ -653,6 +653,86 @@ class GraphService(BaseService):
             "updatedAt": graph.updated_at.isoformat() if graph.updated_at else None,
             **state,
         }
+
+    async def create_default_deep_agents_graph(
+        self,
+        llm_model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        max_tokens: int = 4096,
+        user_id: Optional[Any] = None,
+    ) -> CompiledStateGraph:
+        """
+        Build a default DeepAgents single-node graph in memory (no DB persistence).
+        Used for "default conversation" when graph_id is None in Chat API.
+
+        Constructs one root node with useDeepAgents=true and no edges, then
+        uses GraphBuilder so that DeepAgentsGraphBuilder builds a standalone
+        create_deep_agent graph.
+
+        Returns:
+            CompiledStateGraph: Same type as create_graph_by_graph_id, ready for ainvoke/astream_events.
+        """
+        import time
+
+        start_time = time.time()
+        graph_id = uuid.uuid4()
+        node_id = uuid.uuid4()
+
+        # In-memory graph (not added to session)
+        graph = AgentGraph(
+            id=graph_id,
+            name="默认对话",
+            user_id=str(user_id) if user_id is not None else "",
+            variables={},
+        )
+
+        # Single root node with DeepAgents enabled
+        node = GraphNode(
+            id=node_id,
+            graph_id=graph_id,
+            type="agent",
+            data={
+                "label": "Agent",
+                "config": {"useDeepAgents": True, "skills": ["*"]},
+            },
+            prompt="",
+            tools={},
+            memory={},
+            position_x=0,
+            position_y=0,
+            width=0,
+            height=0,
+        )
+
+        nodes: List[GraphNode] = [node]
+        edges: List[GraphEdge] = []
+
+        logger.info(
+            f"[GraphService] ===== create_default_deep_agents_graph START ===== | "
+            f"user_id={user_id} | llm_model={llm_model}"
+        )
+
+        model_service = ModelService(self.db)
+        builder = GraphBuilder(
+            graph=graph,
+            nodes=nodes,
+            edges=edges,
+            llm_model=llm_model,
+            api_key=api_key,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            user_id=user_id,
+            model_service=model_service,
+        )
+        compiled_graph = await builder.build()
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info(
+            f"[GraphService] ===== create_default_deep_agents_graph COMPLETE ===== | "
+            f"user_id={user_id} | elapsed={elapsed_ms:.2f}ms"
+        )
+        return compiled_graph
 
     async def create_graph_by_graph_id(
         self,

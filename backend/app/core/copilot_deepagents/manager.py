@@ -901,7 +901,7 @@ async def stream_copilot_manager(
         async for event in manager.astream_events(
             {"messages": [HumanMessage(content=full_prompt)]},
             version="v2",
-            config={"recursion_limit": 100},
+            config={"recursion_limit": 300},
         ):
             event_dict_raw = event if isinstance(event, dict) else {}
             event_dict: Dict[str, Any] = event_dict_raw  # type: ignore[assignment]

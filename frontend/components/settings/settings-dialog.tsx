@@ -3,7 +3,8 @@
 import {
     Settings,
     User,
-    Brain
+    Brain,
+    Box
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,8 +12,11 @@ import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
+import { useSession } from '@/lib/auth/auth-client';
+
 import { ModelsPage } from './models-page';
 import { ProfilePage } from './profile-page';
+import { SandboxesPage } from './sandboxes-page';
 
 interface SettingsDialogProps {
     open: boolean;
@@ -46,6 +50,8 @@ const MenuItem = ({
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChange }) => {
     const { t } = useTranslation();
+    const { data: session } = useSession();
+    const user = session?.user;
     const [activeTab, setActiveTab] = useState('profile');
 
     return (
@@ -68,6 +74,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
 
                         <div className="px-3 mb-2 mt-6 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('settings.workspace')}</div>
                         <MenuItem icon={Brain} label={t('settings.models')} isActive={activeTab === 'models'} onClick={() => setActiveTab('models')} />
+
+                        {user?.isSuperUser && (
+                            <MenuItem icon={Box} label={t('settings.sandboxes.title')} isActive={activeTab === 'sandboxes'} onClick={() => setActiveTab('sandboxes')} />
+                        )}
                     </div>
                 </div>
 
@@ -79,6 +89,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
                         </div>
                     )}
                     {activeTab === 'profile' && <ProfilePage />}
+                    {activeTab === 'sandboxes' && (
+                        <div className="flex-1 overflow-hidden p-6">
+                            <SandboxesPage />
+                        </div>
+                    )}
                 </div>
 
             </DialogContent>

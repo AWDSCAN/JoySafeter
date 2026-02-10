@@ -15,6 +15,7 @@ from app.models.base import TimestampMixin
 if TYPE_CHECKING:
     from app.models.oauth_account import OAuthAccount  # pragma: no cover
     from app.models.organization import Organization  # pragma: no cover
+    from app.models.user_sandbox import UserSandbox  # pragma: no cover
     from app.models.workspace import Workspace, WorkspaceMember  # pragma: no cover
 
 
@@ -77,6 +78,12 @@ class AuthUser(Base, TimestampMixin):
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(
         "OAuthAccount",
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    sandbox: Mapped[Optional["UserSandbox"]] = relationship(
+        "UserSandbox",
+        back_populates="user",
+        uselist=False,
         cascade="all, delete-orphan",
     )
 
