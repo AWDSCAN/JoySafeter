@@ -1,11 +1,12 @@
 """
-Tool Registry - 统一的工具注册中心
+Tool Registry - Unified Tool Registration Center
 
-管理所有类型的工具: Builtin、MCP、Custom 等
-作为内存中工具管理的单一数据源 (Single Source of Truth)
+Manages all types of tools: Builtin, MCP, Custom, etc.
+Acts as the Single Source of Truth for in-memory tool management.
 """
 
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from langchain_core.tools import BaseTool
@@ -18,19 +19,19 @@ MCP_TOOL_KEY_SEPARATOR = "::"
 
 
 class ToolRegistry:
-    """统一的工具注册中心"""
+    """Unified Tool Registration Center"""
 
     def __init__(self):
         self._tools: OrderedDict[str, EnhancedTool] = OrderedDict()
         self._tool_metadata: Dict[str, ToolMetadata] = {}
 
-        # 索引加速查询
+        # Indexing for faster query
         self._source_type_index: Dict[ToolSourceType, Set[str]] = {}
         self._tag_index: Dict[str, Set[str]] = {}
         self._category_index: Dict[str, Set[str]] = {}
         self._mcp_server_index: Dict[str, Set[str]] = {}
 
-        # 用户/工作区索引 (用于快速查询用户拥有的工具)
+        # User/Workspace ownership index (for fast query of tools owned by user)
         self._owner_user_index: Dict[str, Set[str]] = {}
         self._owner_workspace_index: Dict[str, Set[str]] = {}
 
@@ -39,27 +40,27 @@ class ToolRegistry:
     @staticmethod
     def make_mcp_tool_key(server_name: str, tool_name: str) -> str:
         """
-        生成 MCP 工具的唯一键
+        Generate unique key for MCP tool
 
         Args:
-            server_name: MCP 服务器名称
-            tool_name: 工具名称
+            server_name: MCP server name
+            tool_name: Tool name
 
         Returns:
-            唯一键，格式: {server_name}::{tool_name}
+            Unique key, format: {server_name}::{tool_name}
         """
         return f"{server_name}{MCP_TOOL_KEY_SEPARATOR}{tool_name}"
 
     @staticmethod
     def parse_mcp_tool_key(key: str) -> tuple[Optional[str], Optional[str]]:
         """
-        解析 MCP 工具键
+        Parse MCP tool key
 
         Args:
-            key: 工具键
+            key: Tool key
 
         Returns:
-            (server_name, tool_name) 或 (None, None) 如果不是 MCP 工具键
+            (server_name, tool_name) or (None, None) if not an MCP tool key
         """
         if MCP_TOOL_KEY_SEPARATOR not in key:
             return None, None
@@ -68,14 +69,14 @@ class ToolRegistry:
 
     def get_mcp_tool(self, server_name: str, tool_name: str) -> Optional[EnhancedTool]:
         """
-        通过 server_name + tool_name 获取 MCP 工具
+        Get MCP tool by server_name + tool_name
 
         Args:
-            server_name: MCP 服务器名称
-            tool_name: 工具名称
+            server_name: MCP server name
+            tool_name: Tool name
 
         Returns:
-            EnhancedTool 或 None
+            EnhancedTool or None
         """
         key = self.make_mcp_tool_key(server_name, tool_name)
         return self._tools.get(key)
@@ -88,18 +89,18 @@ class ToolRegistry:
         **meta_kwargs,
     ) -> EnhancedTool:
         """
-        全能注册接口。支持:
+        Universal registration interface. Supports:
         1. registry.register(my_enhanced_tool)
         2. registry.register(langchain_structured_tool, category="search")
         3. registry.register(async_def_function, priority=10)
 
         Args:
-            tool_input: 工具对象或可调用对象
-            overwrite: 是否覆盖已存在的工具
-            use_label_name_as_key: 是否使用 label_name 作为存储键（MCP 工具使用）
-            **meta_kwargs: 元数据参数
+            tool_input: Tool object or callable
+            overwrite: Whether to overwrite existing tool
+            use_label_name_as_key: Whether to use label_name as storage key (used by MCP tools)
+            **meta_kwargs: Metadata arguments
         """
-        # 1. 转换逻辑 (Adapter)
+        # 1. Conversion logic (Adapter)
         if isinstance(tool_input, EnhancedTool):
             final_tool = tool_input
         elif isinstance(tool_input, BaseTool):
@@ -109,7 +110,7 @@ class ToolRegistry:
         else:
             raise ValueError(f"Unknown tool type: {type(tool_input)}")
 
-        # 2. 注入/更新元数据
+        # 2. Inject/Update metadata
         for key, value in meta_kwargs.items():
             if hasattr(final_tool.tool_metadata, key):
                 setattr(final_tool.tool_metadata, key, value)
@@ -144,10 +145,10 @@ class ToolRegistry:
         category: Optional[str] = None,
         **metadata_kwargs,
     ) -> EnhancedTool:
-        """注册内置工具"""
-        # 确保 tool_type 在注册时就存储在 custom_attrs 中
+        """Register builtin tool"""
+        # Ensure tool_type is stored in custom_attrs at registration time
         custom_attrs = metadata_kwargs.pop("custom_attrs", {})
-        custom_attrs["tool_type"] = "builtin"  # 在注册时设置 tool_type
+        custom_attrs["tool_type"] = "builtin"  # Set tool_type at registration
 
         metadata = ToolMetadata(
             source_type=ToolSourceType.BUILTIN,
@@ -174,16 +175,16 @@ class ToolRegistry:
         category: Optional[str] = None,
         **metadata_kwargs,
     ) -> EnhancedTool:
-        """注册 MCP 工具
+        """Register MCP tool
 
-        重要：
-        - tool.name 保持为真实的工具名称（mcp_tool_name），LLM 看到的和调用时使用的
-        - tool.label_name 设置为 server_name::tool_name，用于管理和显示
-        - Registry 内部存储使用 label_name 作为键
+        Important:
+        - tool.name remains the real tool name (mcp_tool_name), seen by LLM and used when calling
+        - tool.label_name is set to server_name::tool_name, used for management and display
+        - Registry uses label_name as key internally
         """
-        # 确保 tool_type 在注册时就存储在 custom_attrs 中
+        # Ensure tool_type is stored in custom_attrs at registration time
         custom_attrs = metadata_kwargs.pop("custom_attrs", {})
-        custom_attrs["tool_type"] = "mcp"  # 在注册时设置 tool_type
+        custom_attrs["tool_type"] = "mcp"  # Set tool_type at registration
 
         tool.tool_metadata = ToolMetadata(
             source_type=ToolSourceType.MCP,
@@ -212,19 +213,19 @@ class ToolRegistry:
         source_type: Optional[ToolSourceType] = None,
         **metadata_kwargs,
     ) -> EnhancedTool:
-        """注册 LangChain 工具
+        """Register LangChain tool
 
         Args:
-            langchain_tool: LangChain BaseTool 实例（如 @tool 装饰器创建的工具）
-            tags: 工具标签集合
-            category: 工具类别
-            priority: 工具优先级
-            enabled: 是否启用
-            source_type: 工具来源类型，如果为 None 则默认为 LANGCHAIN
-            **metadata_kwargs: 其他元数据参数（如 requires_confirmation, external_execution 等）
+            langchain_tool: LangChain BaseTool instance (e.g. tool created with @tool decorator)
+            tags: Tool tags set
+            category: Tool category
+            priority: Tool priority
+            enabled: Whether enabled
+            source_type: Tool source type, defaults to LANGCHAIN if None
+            **metadata_kwargs: Other metadata arguments (e.g. requires_confirmation, external_execution etc.)
 
         Returns:
-            注册后的 EnhancedTool 实例
+            Registered EnhancedTool instance
 
         Example:
             from langchain_core.tools import tool
@@ -241,12 +242,12 @@ class ToolRegistry:
                 priority=10
             )
         """
-        # 确保 tool_type 在注册时就存储在 custom_attrs 中
+        # Ensure tool_type is stored in custom_attrs at registration time
         custom_attrs = metadata_kwargs.pop("custom_attrs", {})
-        # 根据 source_type 设置 tool_type
+        # Set tool_type based on source_type
         if source_type is None:
             source_type = ToolSourceType.LANGCHAIN
-        # 对于内置工具，应该标记为 "builtin"
+        # For builtin tools, should mark as "builtin"
         if source_type == ToolSourceType.BUILTIN:
             custom_attrs["tool_type"] = "builtin"
         else:
@@ -269,26 +270,26 @@ class ToolRegistry:
     def register_batch(
         self, tools: List[EnhancedTool], tool_metadata_list: Optional[List[ToolMetadata]] = None
     ) -> List[EnhancedTool]:
-        """批量注册工具"""
+        """Batch register tools"""
         registered = []
         for i, tool in enumerate(tools):
             if tool_metadata_list and i < len(tool_metadata_list):
-                # 如果提供了元数据，更新工具的元数据
+                # If metadata provided, update tool metadata
                 tool.tool_metadata = tool_metadata_list[i]
             registered.append(self.register(tool))
         return registered
 
     def unregister(self, tool_name: str) -> bool:
-        """注销工具"""
+        """Unregister tool"""
         if tool_name not in self._tools:
             return False
 
         tool_metadata = self._tool_metadata[tool_name]
 
-        # 从索引中移除
+        # Remove from index
         self._remove_from_indexes(tool_name, tool_metadata)
 
-        # 移除工具
+        # Remove tool
         del self._tools[tool_name]
         del self._tool_metadata[tool_name]
 
@@ -307,18 +308,18 @@ class ToolRegistry:
         category: Optional[str] = None,
     ) -> List[EnhancedTool]:
         """
-        批量注册 MCP 服务器的工具
+        Batch register MCP server tools
 
         Args:
-            mcp_server_name: MCP 服务器名称
-            tools: 工具列表
-            owner_user_id: 所有者用户 ID
-            owner_workspace_id: 工作区 ID (可选)
-            tags: 共享标签集合
-            category: 共享类别
+            mcp_server_name: MCP server name
+            tools: Tool list
+            owner_user_id: Owner user ID
+            owner_workspace_id: Workspace ID (optional)
+            tags: Shared tags set
+            category: Shared category
 
         Returns:
-            注册后的工具列表
+            Registered tool list
         """
         registered = []
         base_tags = tags or set()
@@ -345,13 +346,13 @@ class ToolRegistry:
 
     def unregister_mcp_server_tools(self, mcp_server_name: str) -> int:
         """
-        注销 MCP 服务器的所有工具
+        Unregister all tools of an MCP server
 
         Args:
-            mcp_server_name: MCP 服务器名称
+            mcp_server_name: MCP server name
 
         Returns:
-            注销的工具数量
+            Number of unregistered tools
         """
         tools_to_remove = self._mcp_server_index.get(mcp_server_name, set()).copy()
         count = 0
@@ -365,13 +366,13 @@ class ToolRegistry:
 
     def get_mcp_server_tools(self, mcp_server_name: str) -> List[EnhancedTool]:
         """
-        获取 MCP 服务器的所有工具
+        Get all tools of an MCP server
 
         Args:
-            mcp_server_name: MCP 服务器名称
+            mcp_server_name: MCP server name
 
         Returns:
-            工具列表
+            Tool list
         """
         tool_names = self._mcp_server_index.get(mcp_server_name, set())
         return [self._tools[name] for name in tool_names if name in self._tools]
@@ -386,21 +387,21 @@ class ToolRegistry:
         include_builtin: bool = True,
     ) -> List[EnhancedTool]:
         """
-        获取用户/工作区范围内可用的工具
+        Get tools available in user/workspace scope
 
-        包括:
-        - 内置工具 (builtin) - 如果 include_builtin=True
-        - 用户拥有的工具 (owner_user_id == user_id, owner_workspace_id is None)
-        - 工作区级别的工具 (owner_workspace_id == workspace_id) - 如果提供了 workspace_id
+        Includes:
+        - Builtin tools (builtin) - if include_builtin=True
+        - Tools owned by user (owner_user_id == user_id, owner_workspace_id is None)
+        - Workspace level tools (owner_workspace_id == workspace_id) - if workspace_id provided
 
         Args:
-            user_id: 用户 ID
-            workspace_id: 工作区 ID (可选)
-            filter_config: 额外的过滤条件
-            include_builtin: 是否包含内置工具
+            user_id: User ID
+            workspace_id: Workspace ID (optional)
+            filter_config: Additional filter conditions
+            include_builtin: Whether to include builtin tools
 
         Returns:
-            符合条件的工具列表
+            List of matching tools
         """
         # Build a filter that matches the scope
         scope_filter = ToolFilter(
@@ -434,34 +435,34 @@ class ToolRegistry:
         return self.get_tools(scope_filter)
 
     def get_tool(self, name: str) -> Optional[EnhancedTool]:
-        """获取单个工具"""
+        """Get a single tool"""
         return self._tools.get(name)
 
     def get_tools(
         self, filter_config: Optional[ToolFilter] = None, sort_by_priority: bool = True
     ) -> List[EnhancedTool]:
-        """根据过滤条件获取工具列表"""
+        """Get tool list based on filter conditions"""
         if filter_config is None:
             tools = list(self._tools.values())
         else:
             tools = self._filter_tools(filter_config)
 
-        # 按优先级排序
+        # Sort by priority
         if sort_by_priority:
             tools.sort(key=lambda t: t.tool_metadata.priority, reverse=True)
 
         return tools
 
     def get_tool_names(self, filter_config: Optional[ToolFilter] = None) -> List[str]:
-        """获取工具名称列表（返回 label_name，用于管理和显示）"""
+        """Get list of tool names (returns label_name, used for management and display)"""
         tools = self.get_tools(filter_config)
         return [tool.get_label_name() for tool in tools]
 
     def _filter_tools(self, filter_config: ToolFilter) -> List[EnhancedTool]:
-        """使用索引加速的过滤"""
+        """Filter using index acceleration"""
         candidate_names: Optional[Set[str]] = None
 
-        # 使用索引快速筛选候选集
+        # Filter candidates quickly using index
         if filter_config.source_types:
             type_candidates = set()
             for source_type in filter_config.source_types:
@@ -480,11 +481,11 @@ class ToolRegistry:
                 category_candidates.update(self._category_index.get(category, set()))
             candidate_names = category_candidates if candidate_names is None else candidate_names & category_candidates
 
-        # 如果没有使用索引,使用所有工具
+        # If no index used, use all tools
         if candidate_names is None:
             candidate_names = set(self._tools.keys())
 
-        # 对候选集进行详细过滤
+        # Detailed filter on candidates
         filtered_tools = []
         for tool_name in candidate_names:
             tool = self._tools[tool_name]
@@ -496,71 +497,71 @@ class ToolRegistry:
         return filtered_tools
 
     def _update_indexes(self, tool_name: str, tool_metadata: ToolMetadata):
-        """更新索引"""
-        # 来源类型索引
+        """Update indexes"""
+        # Source type index
         if tool_metadata.source_type not in self._source_type_index:
             self._source_type_index[tool_metadata.source_type] = set()
         self._source_type_index[tool_metadata.source_type].add(tool_name)
 
-        # 标签索引
+        # Tag index
         for tag in tool_metadata.tags:
             if tag not in self._tag_index:
                 self._tag_index[tag] = set()
             self._tag_index[tag].add(tool_name)
 
-        # 类别索引
+        # Category index
         if tool_metadata.category:
             if tool_metadata.category not in self._category_index:
                 self._category_index[tool_metadata.category] = set()
             self._category_index[tool_metadata.category].add(tool_name)
 
-        # MCP 服务器索引
+        # MCP server index
         if tool_metadata.mcp_server_name:
             if tool_metadata.mcp_server_name not in self._mcp_server_index:
                 self._mcp_server_index[tool_metadata.mcp_server_name] = set()
             self._mcp_server_index[tool_metadata.mcp_server_name].add(tool_name)
 
-        # 用户所有权索引
+        # User ownership index
         if tool_metadata.owner_user_id:
             if tool_metadata.owner_user_id not in self._owner_user_index:
                 self._owner_user_index[tool_metadata.owner_user_id] = set()
             self._owner_user_index[tool_metadata.owner_user_id].add(tool_name)
 
-        # 工作区所有权索引
+        # Workspace ownership index
         if tool_metadata.owner_workspace_id:
             if tool_metadata.owner_workspace_id not in self._owner_workspace_index:
                 self._owner_workspace_index[tool_metadata.owner_workspace_id] = set()
             self._owner_workspace_index[tool_metadata.owner_workspace_id].add(tool_name)
 
     def _remove_from_indexes(self, tool_name: str, tool_metadata: ToolMetadata):
-        """从索引中移除"""
-        # 来源类型索引
+        """Remove from indexes"""
+        # Source type index
         if tool_metadata.source_type in self._source_type_index:
             self._source_type_index[tool_metadata.source_type].discard(tool_name)
 
-        # 标签索引
+        # Tag index
         for tag in tool_metadata.tags:
             if tag in self._tag_index:
                 self._tag_index[tag].discard(tool_name)
 
-        # 类别索引
+        # Category index
         if tool_metadata.category and tool_metadata.category in self._category_index:
             self._category_index[tool_metadata.category].discard(tool_name)
 
-        # MCP 服务器索引
+        # MCP server index
         if tool_metadata.mcp_server_name and tool_metadata.mcp_server_name in self._mcp_server_index:
             self._mcp_server_index[tool_metadata.mcp_server_name].discard(tool_name)
 
-        # 用户所有权索引
+        # User ownership index
         if tool_metadata.owner_user_id and tool_metadata.owner_user_id in self._owner_user_index:
             self._owner_user_index[tool_metadata.owner_user_id].discard(tool_name)
 
-        # 工作区所有权索引
+        # Workspace ownership index
         if tool_metadata.owner_workspace_id and tool_metadata.owner_workspace_id in self._owner_workspace_index:
             self._owner_workspace_index[tool_metadata.owner_workspace_id].discard(tool_name)
 
     def list_all(self) -> Dict[str, Dict[str, Any]]:
-        """列出所有工具及其元数据"""
+        """List all tools and their metadata"""
         return {
             name: {
                 "tool": tool,
@@ -583,7 +584,7 @@ class ToolRegistry:
         }
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取注册统计信息"""
+        """Get registration statistics"""
         return {
             "total_tools": len(self._tools),
             "by_source_type": {source_type.value: len(tools) for source_type, tools in self._source_type_index.items()},
@@ -611,10 +612,12 @@ def get_global_registry() -> ToolRegistry:
 def _initialize_builtin_tools(registry: ToolRegistry):
     """Initialize builtin tools in the registry."""
     try:
+        from app.core.tools.buildin.file import FileTools
+        from app.core.tools.buildin.python import PythonTools
         from app.core.tools.buildin.research_tools import tavily_search, think_tool
+        from app.core.tools.buildin.skill_management import SkillManagementTools
 
-        # Register research tools (these are LangChain tools created with @tool decorator)
-        # 标记为 BUILTIN 类型，这样前端可以通过 tool_type=builtin 过滤
+        # 1. Register research tools (LangChain tools created with @tool decorator)
         registry.register_langchain_tool(
             tavily_search,
             category="research",
@@ -629,6 +632,69 @@ def _initialize_builtin_tools(registry: ToolRegistry):
             source_type=ToolSourceType.BUILTIN,
         )
 
-        logger.info("Builtin research tools registered successfully")
+        # 2. Register execution tools (FileTools, PythonTools, SkillManagement)
+        # We instantiate them with dummy paths because we only need their metadata (name, description, args)
+        # for frontend display. The actual execution uses instances created in node_tools.py with real user context.
+        #
+        # NOTE: We use the SAME names as in node_tools.py -> aliases map
+
+        # --- Code Interpreter ---
+        python_tools = PythonTools(base_dir=Path("/tmp"))
+        registry.register_builtin(
+            callable_func=python_tools.run_python_code,
+            name="code_interpreter",
+            description="Execute Python code (dangerous; requires supervision).",
+            category="execution",
+            tags={"python", "code", "execution"},
+        )
+
+        # --- File Tools ---
+        file_tools = FileTools(base_dir=Path("/tmp"))
+
+        registry.register_builtin(
+            callable_func=file_tools.read_file,
+            name="read_file",
+            description="Read a file under the per-user sandbox directory.",
+            category="filesystem",
+            tags={"file", "read"},
+        )
+
+        registry.register_builtin(
+            callable_func=file_tools.list_files,
+            name="list_files",
+            description="List files under the per-user sandbox directory.",
+            category="filesystem",
+            tags={"file", "list"},
+        )
+
+        registry.register_builtin(
+            callable_func=file_tools.search_files,
+            name="search_files",
+            description="Search files under the per-user sandbox directory by glob pattern.",
+            category="filesystem",
+            tags={"file", "search"},
+        )
+
+        registry.register_builtin(
+            callable_func=file_tools.save_file,
+            name="save_file",
+            description="Save a file under the per-user sandbox directory.",
+            category="filesystem",
+            tags={"file", "save", "write"},
+        )
+
+        # --- Skill Management ---
+        # We use a dummy user_id for registration purposes
+        skill_tools = SkillManagementTools(user_id="system_registration")
+        registry.register_builtin(
+            callable_func=skill_tools.deploy_local_skill,
+            name="deploy_local_skill",
+            description="Deploy a local skill from the sandbox to the system (private).",
+            category="system",
+            tags={"skill", "deployment"},
+        )
+
+        logger.info("Builtin tools (research + execution) registered successfully")
+
     except Exception as e:
         logger.warning(f"Failed to register some builtin tools: {e}")
