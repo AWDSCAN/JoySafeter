@@ -4,11 +4,11 @@ Sandbox Manager Service
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.backends.constants import (
@@ -170,7 +170,7 @@ class SandboxManagerService:
             .values(status="stopped", last_active_at=datetime.now(timezone.utc))
         )
         await self.db.commit()
-        return result.rowcount > 0
+        return bool(cast(CursorResult, result).rowcount > 0)
 
     async def restart_sandbox(self, sandbox_id: str) -> bool:
         """重启沙箱"""
@@ -200,7 +200,7 @@ class SandboxManagerService:
         # 2. 删除数据库记录
         result = await self.db.execute(delete(UserSandbox).where(UserSandbox.id == sandbox_id))
         await self.db.commit()
-        return result.rowcount > 0
+        return bool(cast(CursorResult, result).rowcount > 0)
 
     async def cleanup_idle_sandboxes(self) -> int:
         """清理所有闲置沙箱（后台任务）"""
