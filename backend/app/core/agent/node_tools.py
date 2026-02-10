@@ -52,7 +52,7 @@ def extract_tools_config(node: GraphNode) -> Optional[dict]:
 
 
 def _parse_mcp_ids(mcp_ids: Iterable[str]) -> Dict[str, Set[str]]:
-    """解析 MCP 工具 ID (格式: server_name::tool_name)"""
+    """Parse MCP tool IDs (format: server_name::tool_name)"""
     result: Dict[str, Set[str]] = {}
 
     for raw in mcp_ids:
@@ -93,7 +93,7 @@ def _alias_tool(*, name: str, description: str, callable_func: Any) -> EnhancedT
     )
 
 
-def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path) -> List[Any]:
+def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path, user_id: str) -> List[Any]:
     """
     Resolve builtin tool IDs into LangChain tools.
 
@@ -101,6 +101,7 @@ def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path) -> List[An
     to concrete tool implementations:
     - web_search -> TavilyTools.web_search_using_tavily
     - code_interpreter -> PythonTools.run_python_code
+    - deploy_local_skill -> SkillManagementTools.deploy_local_skill
 
     For tools registered in tool_registry (like tavily_search, think_tool),
     we first try to get them from the registry.
@@ -114,18 +115,11 @@ def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path) -> List[An
     # (e.g. `tavily-python`) are not installed.
     from app.core.tools.buildin.file import FileTools
     from app.core.tools.buildin.python import PythonTools
+    from app.core.tools.buildin.skill_management import SkillManagementTools
 
     files = FileTools(base_dir=root_dir)
     python = PythonTools(base_dir=root_dir)
-
-    tavily = None
-    try:
-        from app.core.tools.buildin.tavily import TavilyTools
-
-        tavily = TavilyTools()
-    except Exception as e:
-        # Tavily is optional; only required if `web_search` is selected.
-        logger.warning(f"[node_tools] TavilyTools not available: {type(e).__name__}: {e}")
+    skill_mgmt = SkillManagementTools(user_id=user_id)
 
     # Research tools - get from registry only
     research_tools = {}
@@ -139,19 +133,15 @@ def _resolve_builtin_tools(*, builtin_ids: List[str], root_dir: Path) -> List[An
 
     # Canonical mapping for UI-friendly IDs -> tool implementations.
     aliases: Dict[str, Any] = {
-        "web_search": _alias_tool(
-            name="web_search",
-            description="Search the web (Tavily).",
-            callable_func=(
-                tavily.web_search_using_tavily
-                if tavily
-                else (lambda *args, **kwargs: "Error: TavilyTools not installed")
-            ),
-        ),
         "code_interpreter": _alias_tool(
             name="code_interpreter",
             description="Execute Python code (dangerous; requires supervision).",
             callable_func=python.run_python_code,
+        ),
+        "deploy_local_skill": _alias_tool(
+            name="deploy_local_skill",
+            description="Deploy a local skill from the sandbox to the system (private).",
+            callable_func=skill_mgmt.deploy_local_skill,
         ),
         **research_tools,  # Add research tools to aliases
         # Some additional useful primitives (if UI sends them)
@@ -331,7 +321,9 @@ async def resolve_tools_for_node(node: GraphNode, *, user_id: str | None = None)
     # Step 2: Resolve builtin tools
     if builtin_ids_list:
         logger.debug(f"[resolve_tools_for_node] Resolving {len(builtin_ids_list)} builtin tools")
-        builtin_tools = _resolve_builtin_tools(builtin_ids=builtin_ids_list, root_dir=root_dir)
+        builtin_tools = _resolve_builtin_tools(
+            builtin_ids=builtin_ids_list, root_dir=root_dir, user_id=normalized_user_id
+        )
         logger.debug(f"[resolve_tools_for_node] Resolved {len(builtin_tools)} builtin tools")
         tools.extend(builtin_tools)
 

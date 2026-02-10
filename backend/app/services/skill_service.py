@@ -1,5 +1,5 @@
 """
-Skill 服务：权限校验 + CRUD
+Skill Service: Permission Check + CRUD
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class SkillService(BaseService[Skill]):
         include_public: bool = True,
         tags: Optional[List[str]] = None,
     ) -> List[Skill]:
-        """获取 Skills 列表"""
+        """Get Skills list"""
         result = await self.repo.list_by_user(
             user_id=current_user_id,
             include_public=include_public,
@@ -58,12 +58,12 @@ class SkillService(BaseService[Skill]):
         skill_id: uuid.UUID,
         current_user_id: Optional[str] = None,
     ) -> Skill:
-        """获取 Skill 详情"""
+        """Get Skill details"""
         skill = await self.repo.get_with_files(skill_id)
         if not skill or not isinstance(skill, Skill):
             raise NotFoundException("Skill not found")
 
-        # 权限检查：只有拥有者或公开的 Skill 可以访问
+        # Permission check: Only owner or public Skill can be accessed
         if skill.owner_id and skill.owner_id != current_user_id and not skill.is_public:
             raise ForbiddenException("You don't have permission to access this skill")
 
@@ -76,38 +76,38 @@ class SkillService(BaseService[Skill]):
         skill_name: str,
         current_user_id: Optional[str] = None,
     ) -> Optional[Skill]:
-        """根据名称获取 Skill（不区分大小写）
+        """Get Skill by name (case-insensitive)
 
         Args:
-            skill_name: 技能名称
-            current_user_id: 当前用户ID，用于权限检查
+            skill_name: Skill name
+            current_user_id: Current user ID for permission check
 
         Returns:
-            Skill 对象，如果未找到或无权访问则返回 None
+            Skill object, returns None if not found or unauthorized
         """
-        # 获取所有可访问的技能
+        # Get all accessible skills
         all_skills = await self.list_skills(
             current_user_id=current_user_id,
             include_public=True,
         )
 
-        # 按名称查找（不区分大小写）
+        # Search by name (case-insensitive)
         for skill in all_skills:
             if skill.name.lower() == skill_name.lower():
-                # 获取完整信息（包括文件）
+                # Get complete information (including files)
                 result = await self.repo.get_with_files(skill.id)
                 return result if isinstance(result, Skill) else None
 
         return None
 
     async def format_skill_content(self, skill: Skill) -> str:
-        """格式化技能内容为字符串
+        """Format skill content as string
 
         Args:
-            skill: Skill 对象（应包含 files 关系）
+            skill: Skill object (should include files relationship)
 
         Returns:
-            格式化后的技能内容字符串
+            Formatted skill content string
         """
         return str(self.formatter.format_skill_content(skill))
 
@@ -126,12 +126,12 @@ class SkillService(BaseService[Skill]):
         license: Optional[str] = None,
         files: Optional[List[Dict[str, Any]]] = None,
     ) -> Skill:
-        """创建 Skill
+        """Create Skill
 
         If files contain a SKILL.md file with YAML frontmatter, the name and
         description will be extracted from the frontmatter (overriding provided values).
         """
-        # 如果没有指定 owner_id，则使用创建者 ID
+        # If owner_id is not specified, use creator ID
         if owner_id is None:
             owner_id = created_by_id
 
@@ -200,7 +200,7 @@ class SkillService(BaseService[Skill]):
                 logger.warning(f"Skill compatibility exceeds 500 characters, truncating: {error}")
                 compatibility = truncate_compatibility(compatibility)
 
-        # 检查同名 Skill 是否存在（同一拥有者）
+        # Check if Skill with same name exists (same owner)
         existing = await self.repo.get_by_name_and_owner(name, owner_id)
         if existing:
             raise BadRequestException("Skill name already exists for this owner")
@@ -225,7 +225,7 @@ class SkillService(BaseService[Skill]):
         await self.db.flush()
         await self.db.refresh(skill)
 
-        # 创建关联的文件
+        # Create associated files
         if files:
             invalid_files = []
             for file_data in files:
@@ -299,7 +299,7 @@ class SkillService(BaseService[Skill]):
         allowed_tools: Optional[List[str]] = None,
         files: Optional[List[Dict[str, Any]]] = None,
     ) -> Skill:
-        """更新 Skill
+        """Update Skill
 
         If files are provided, they will replace all existing files for this skill.
         """
@@ -307,7 +307,7 @@ class SkillService(BaseService[Skill]):
         if not skill:
             raise NotFoundException("Skill not found")
 
-        # 权限检查：只有拥有者可以更新
+        # Permission check: Only owner can update
         if skill.owner_id != current_user_id:
             raise ForbiddenException("You can only update your own skills")
 
@@ -465,19 +465,19 @@ class SkillService(BaseService[Skill]):
         skill_id: uuid.UUID,
         current_user_id: str,
     ) -> None:
-        """删除 Skill"""
+        """Delete Skill"""
         skill = await self.repo.get(skill_id)
         if not skill:
             raise NotFoundException("Skill not found")
 
-        # 权限检查：只有拥有者可以删除
+        # Permission check: Only owner can delete
         if skill.owner_id != current_user_id:
             raise ForbiddenException("You can only delete your own skills")
 
-        # 删除关联的文件
+        # Delete associated files
         await self.file_repo.delete_by_skill(skill_id)
 
-        # 删除 Skill
+        # Delete Skill
         await self.repo.delete(skill_id)
         await self.db.commit()
 
@@ -493,12 +493,12 @@ class SkillService(BaseService[Skill]):
         storage_key: Optional[str] = None,
         size: int = 0,
     ) -> SkillFile:
-        """添加文件到 Skill"""
+        """Add file to Skill"""
         skill = await self.repo.get(skill_id)
         if not skill:
             raise NotFoundException("Skill not found")
 
-        # 权限检查
+        # Permission check
         if skill.owner_id != current_user_id:
             raise ForbiddenException("You can only add files to your own skills")
 
@@ -547,7 +547,7 @@ class SkillService(BaseService[Skill]):
         file_id: uuid.UUID,
         current_user_id: str,
     ) -> None:
-        """删除文件"""
+        """Delete file"""
         file_obj = await self.file_repo.get(file_id)
         if not file_obj:
             raise NotFoundException("Skill file not found")
@@ -556,7 +556,7 @@ class SkillService(BaseService[Skill]):
         if not skill:
             raise NotFoundException("Skill not found")
 
-        # 权限检查
+        # Permission check
         if skill.owner_id != current_user_id:
             raise ForbiddenException("You can only delete files from your own skills")
 
@@ -571,7 +571,7 @@ class SkillService(BaseService[Skill]):
         path: Optional[str] = None,
         file_name: Optional[str] = None,
     ) -> SkillFile:
-        """更新文件内容"""
+        """Update file content"""
         file_obj = await self.file_repo.get(file_id)
         if not file_obj:
             raise NotFoundException("Skill file not found")
@@ -580,7 +580,7 @@ class SkillService(BaseService[Skill]):
         if not skill:
             raise NotFoundException("Skill not found")
 
-        # 权限检查
+        # Permission check
         if skill.owner_id != current_user_id:
             raise ForbiddenException("You can only update files in your own skills")
 
@@ -668,15 +668,15 @@ class SkillService(BaseService[Skill]):
 
         return next((f for f in skill.files if f.path == "SKILL.md" or f.file_name == "SKILL.md"), None)
 
-    async def import_skill_from_directory(self, skill_dir: str, owner_id: str) -> Skill:
-        """从目录导入 Skill
+    async def import_skill_from_directory(self, skill_dir: str, owner_id: str, is_public: bool = False) -> Skill:
+        """Import Skill from directory
 
         Args:
-            skill_dir: Skill 目录路径 (包含 SKILL.md)
-            owner_id: 所有者 ID
+            skill_dir: Skill directory path (containing SKILL.md)
+            owner_id: Owner ID
 
         Returns:
-            创建或更新的 Skill 对象
+            Created or updated Skill object
         """
         from pathlib import Path
 
@@ -686,39 +686,39 @@ class SkillService(BaseService[Skill]):
         if not skill_path.exists():
             raise FileNotFoundError(f"Skill directory not found: {skill_dir}")
 
-        # 查找 SKILL.md
+        # Find SKILL.md
         skill_md_path = skill_path / "SKILL.md"
         if not skill_md_path.exists():
-            # 尝试小写
+            # Try lowercase
             skill_md_path = skill_path / "skill.md"
 
         if not skill_md_path.exists():
             raise FileNotFoundError(f"SKILL.md not found in {skill_dir}")
 
-        # 读取 SKILL.md
+        # Read SKILL.md
         with open(skill_md_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # 解析元数据
+        # Parse metadata
         frontmatter, body = parse_skill_md(content)
         metadata = extract_metadata_from_frontmatter(frontmatter)
 
         name = metadata.get("name", skill_path.name)
         description = metadata.get("description", "")
 
-        # 准备文件列表
+        # Prepare file list
         files = []
 
-        # 添加 SKILL.md
+        # Add SKILL.md
         files.append({"path": "SKILL.md", "file_name": "SKILL.md", "content": content, "file_type": "markdown"})
 
-        # 递归读取其他文件
+        # Recursively read other files
         for file_path in skill_path.rglob("*"):
             if file_path.is_file() and file_path.name.lower() != "skill.md" and not file_path.name.startswith("."):
                 try:
                     rel_path = file_path.relative_to(skill_path)
 
-                    # 简单检测二进制文件 (通过尝试 utf-8 读取)
+                    # Simple binary file check (try reading as utf-8)
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
                             file_content = f.read()
@@ -732,12 +732,12 @@ class SkillService(BaseService[Skill]):
                             }
                         )
                     except UnicodeDecodeError:
-                        # 跳过二进制文件
+                        # Skip binary files
                         continue
                 except Exception:
                     continue
 
-        # 检查是否已存在
+        # Check if exists
         try:
             existing_skill = await self.get_skill_by_name(name, current_user_id=owner_id)
         except Exception:
@@ -750,7 +750,7 @@ class SkillService(BaseService[Skill]):
                 name=name,
                 description=description,
                 files=files,
-                is_public=True,
+                is_public=is_public,
             )
         else:
             return await self.create_skill(
@@ -760,11 +760,11 @@ class SkillService(BaseService[Skill]):
                 content=body,
                 files=files,
                 owner_id=owner_id,
-                is_public=True,
+                is_public=is_public,
             )
 
     def _detect_file_type(self, file_path: Union[str, Path]) -> str:
-        """简单检测文件类型"""
+        """Simple file type detection"""
         if isinstance(file_path, str):
             file_path = Path(file_path)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-自动加载 Skills 脚本
-扫描 /app/skills 目录，将检测到的 Skill (含有 SKILL.md) 导入数据库。
+Auto-load Skills Script
+Scans the /app/skills directory and imports detected Skills (containing SKILL.md) into the database.
 """
 
 import asyncio
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# 确保可以导入 app 模块
+# Ensure app module can be imported
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from loguru import logger
@@ -17,19 +17,19 @@ from loguru import logger
 from app.core.database import AsyncSessionLocal
 from app.services.skill_service import SkillService
 
-# 设置日志
+# Setup logging
 logger.remove()
 logger.add(sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}", level="INFO")
 
 
 def get_skills_dir() -> Optional[Path]:
-    """获取 Skills 目录路径（兼容 Docker 和本地开发）"""
-    # 1. Docker 环境
+    """Get Skills directory path (compatible with Docker and local development)"""
+    # 1. Docker environment
     docker_path = Path("/app/skills")
     if docker_path.exists():
         return docker_path
 
-    # 2. 本地开发环境 (相对于脚本位置: backend/scripts/load_skills.py -> ../../skills)
+    # 2. Local development environment (relative to script: backend/scripts/load_skills.py -> ../../skills)
     # Path(__file__) = backend/scripts/load_skills.py
     # .parent = backend/scripts
     # .parent.parent = backend
@@ -38,7 +38,7 @@ def get_skills_dir() -> Optional[Path]:
     if local_path.exists():
         return local_path
 
-    # 3. 尝试当前工作目录下的 skills
+    # 3. Try skills in current working directory
     cwd_path = Path.cwd() / "skills"
     if cwd_path.exists():
         return cwd_path
@@ -47,7 +47,7 @@ def get_skills_dir() -> Optional[Path]:
 
 
 async def load_skills():
-    """扫描目录并加载 Skills"""
+    """Scan directory and load Skills"""
     skills_dir = get_skills_dir()
     if not skills_dir:
         logger.warning("Skills directory not found. Checked: /app/skills, ../../skills, ./skills")
@@ -61,20 +61,20 @@ async def load_skills():
     async with AsyncSessionLocal() as db:
         service = SkillService(db)
 
-        # 获取系统管理员 ID (通常是第一个用户或特定 ID，这里为了简化，暂时使用固定 ID 或查找第一个 admin)
-        # 在初始化阶段，可能还没有用户，或者使用默认的 admin
-        # 这里假设存在一个系统 admin 或者由 system 创建
-        # 为了简单起见，我们查找一个 admin 用户
+        # Get system admin ID (usually the first user or specific ID; using fixed ID or finding first admin for simplicity)
+        # In initialization phase, users might not exist, or default admin is used
+        # Assuming a system admin exists or created by system
+        # For simplicity, finding an admin user
         from sqlalchemy import select
 
         from app.models.auth import AuthUser as User
 
-        # 尝试查找 admin 用户
+        # Try to find admin user
         result = await db.execute(select(User).where(User.is_super_user.is_(True)))
         admin = result.scalars().first()
 
         if not admin:
-            # 如果没有管理员，尝试查找任意用户
+            # If no admin, try to find any user for skill ownership
             logger.warning("No superuser found. Trying to find any user for skill ownership.")
             result = await db.execute(select(User))
             admin = result.scalars().first()
@@ -86,14 +86,14 @@ async def load_skills():
         owner_id = str(admin.id)
         logger.info(f"Importing skills as user: {admin.email} ({owner_id})")
 
-        # 遍历一级子目录
+        # Iterate first-level subdirectories
         for item in skills_dir.iterdir():
             if item.is_dir():
                 skill_dir = item
                 skill_md_path = skill_dir / "SKILL.md"
 
                 if not skill_md_path.exists():
-                    # 尝试查找小写的 skill.md
+                    # Try finding lowercase skill.md
                     skill_md_path = skill_dir / "skill.md"
 
                 if skill_md_path.exists():
@@ -104,8 +104,8 @@ async def load_skills():
                         logger.error(f"Failed to import skill from {skill_dir}: {e}")
                         error_count += 1
                 else:
-                    # 递归检查子目录 (例如 skills/python/SKILL.md)
-                    # 简单的二级深度检查
+                    # Recursively check subdirectories (e.g. skills/python/SKILL.md)
+                    # Simple second-level depth check
                     has_skill = False
                     for subitem in skill_dir.iterdir():
                         if subitem.is_dir():
@@ -126,11 +126,11 @@ async def load_skills():
 
 
 async def import_single_skill(service: SkillService, skill_dir: Path, skill_md_path: Path, owner_id: str):
-    """导入单个 Skill"""
+    """Import single Skill"""
     logger.info(f"Processing skill: {skill_dir.name}")
 
     try:
-        await service.import_skill_from_directory(str(skill_dir), owner_id)
+        await service.import_skill_from_directory(str(skill_dir), owner_id, is_public=True)
         logger.info(f"  Successfully imported skill: {skill_dir.name}")
     except Exception as e:
         logger.error(f"  Failed to import skill {skill_dir.name}: {e}")

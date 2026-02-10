@@ -8,22 +8,22 @@ from app.core.database import AsyncSessionLocal
 from app.services.skill_service import SkillService
 
 
-# 获取 Skills 目录的逻辑 (复用 scripts/load_skills.py 的逻辑)
+# Logic to get Skills directory (reuse logic from scripts/load_skills.py)
 def get_skills_dir() -> Optional[Path]:
-    """获取 Skills 目录路径（兼容 Docker 和本地开发）"""
-    # 1. Docker 环境
+    """Get Skills directory path (compatible with Docker and local development)"""
+    # 1. Docker environment
     docker_path = Path("/app/skills")
     if docker_path.exists():
         return docker_path
 
-    # 2. 本地开发环境 (尝试从当前工作目录查找)
-    # 假设当前工作目录是 backend/
+    # 2. Local development environment (try to find from current working directory)
+    # Assume current working directory is backend/
     cwd_path = Path.cwd() / "skills"
     if cwd_path.exists():
         return cwd_path
 
-    # 3. 相对路径回溯
-    # 如果当前是在 backend/app/core/skill_developer_deepagents/tools.py
+    # 3. Relative path backtracking
+    # If currently in backend/app/core/skill_developer_deepagents/tools.py
     # .parent.parent.parent.parent.parent / "skills"
     local_path = Path(__file__).parent.parent.parent.parent.parent / "skills"
     if local_path.exists():
@@ -33,19 +33,23 @@ def get_skills_dir() -> Optional[Path]:
 
 
 @tool
-async def deploy_local_skill(skill_name: str) -> str:
+async def deploy_local_skill(skill_name: str, owner_id: str = "") -> str:
     """
-    将本地生成的 Skill 部署到数据库中。
+    Deploy a locally generated Skill to the database (private).
 
-    使用场景：当 Agent 在本地 `skills/<skill_name>` 目录创建了 SKILL.md 和代码文件后，
-    调用此工具将其注册到系统。
+    Usage scenario: When an Agent creates SKILL.md and code files in the local `skills/<skill_name>` directory,
+    call this tool to register it in the system. Skill defaults to private, visible only to owner.
 
     Args:
-        skill_name: Skill 的目录名称 (例如: "my_new_tool")
+        skill_name: Directory name of the Skill (e.g. "my_new_tool")
+        owner_id: Current user ID, used to set the owner of the Skill
 
     Returns:
-        部署结果消息
+        Deployment result message
     """
+    if not owner_id:
+        return "Error: owner_id is required. Please provide the current user's ID."
+
     skills_root = get_skills_dir()
     if not skills_root:
         return "Error: Could not locate 'skills' directory on the server."
@@ -61,25 +65,8 @@ async def deploy_local_skill(skill_name: str) -> str:
         async with AsyncSessionLocal() as db:
             service = SkillService(db)
 
-            # 获取系统管理员或任意用户作为拥有者
-            from sqlalchemy import select
-
-            from app.models.auth import AuthUser as User
-
-            # 尝试查找 admin 用户
-            result = await db.execute(select(User).where(User.is_super_user.is_(True)))
-            admin = result.scalars().first()
-
-            if not admin:
-                # 如果没有管理员，尝试查找任意用户
-                result = await db.execute(select(User))
-                admin = result.scalars().first()
-
-            if not admin:
-                return "Error: No user found in system to assign skill ownership."
-
-            skill = await service.import_skill_from_directory(str(skill_dir), str(admin.id))
-            return f"Success: Skill '{skill.name}' (ID: {skill.id}) deployed successfully."
+            skill = await service.import_skill_from_directory(str(skill_dir), owner_id, is_public=False)
+            return f"Success: Skill '{skill.name}' (ID: {skill.id}) deployed as private skill."
 
     except Exception as e:
         logger.error(f"Failed to deploy skill {skill_name}: {e}")
