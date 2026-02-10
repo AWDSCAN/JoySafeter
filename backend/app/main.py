@@ -1,5 +1,5 @@
 """
-FastAPI 主应用
+FastAPI Main Application
 """
 
 import traceback
@@ -33,7 +33,7 @@ setup_logging()
 
 
 async def _check_db_connection():
-    """启动时快速检查数据库连通性。"""
+    """Quickly check database connectivity on startup."""
     try:
         async with engine.begin() as conn:
             await conn.execute(text("select 1"))
@@ -44,7 +44,7 @@ async def _check_db_connection():
 
 
 async def _check_redis_connection():
-    """启动时快速检查 Redis 连通性。"""
+    """Quickly check Redis connectivity on startup."""
     if not settings.redis_url:
         logger.info("   Redis connection check: Skipped (not configured)")
         return
@@ -62,18 +62,18 @@ async def _check_redis_connection():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    """应用生命周期"""
+    """Application Lifecycle"""
     # Startup
     print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
     print(f"   Environment: {settings.environment}")
     print(f"   Debug: {settings.debug}")
     print("   Architecture: MVC (Model-View-Controller)")
 
-    # 注意：数据库表通过 Alembic 迁移创建，不再使用 create_all
-    # 如需初始化数据库，请运行: alembic upgrade head
-    # init_db() 已弃用，不再调用
+    # Note: Database tables are created via Alembic migrations, create_all is no longer used
+    # To initialize database, run: alembic upgrade head
+    # init_db() is deprecated and no longer called
 
-    # 初始化 Redis
+    # Initialize Redis
     if settings.redis_url:
         try:
             await RedisClient.init()
@@ -83,51 +83,56 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     else:
         logger.info("   Redis not configured (caching/rate-limiting disabled)")
 
-    # 检查数据库连通性（无论环境）
+    # Check database connection (regardless of environment)
     await _check_db_connection()
 
-    # 检查 Redis 连通性（如果配置了 Redis）
+    # Check Redis connection (if configured)
     await _check_redis_connection()
 
-    # 启动时自动同步供应商和模型到数据库（如果数据库中没有）
+    # Automatically sync providers and models to database on startup (if not present)
     try:
         from app.repositories.model_provider import ModelProviderRepository
         from app.services.model_provider_service import ModelProviderService
 
-        async with AsyncSessionLocal() as db:
-            provider_repo = ModelProviderRepository(db)
-            # 检查数据库中是否已有供应商
-            provider_count = await provider_repo.count()
+        # Use distributed lock to prevent concurrent execution by multiple instances/workers
+        async with RedisClient.lock("init:model_providers", timeout=60, blocking_timeout=60):
+            async with AsyncSessionLocal() as db:
+                provider_repo = ModelProviderRepository(db)
+                # Check if providers already exist in database
+                provider_count = await provider_repo.count()
 
-            if provider_count == 0:
-                logger.info("   数据库中没有供应商，开始自动同步...")
-                service = ModelProviderService(db)
-                result = await service.sync_all()
-                logger.info(f"   ✓ 自动同步完成：供应商 {result['providers']} 个，模型 {result['models']} 个")
-                if result.get("errors"):
-                    for error in result["errors"]:
-                        logger.warning(f"   ⚠️  {error}")
-            else:
-                logger.info(f"   ✓ 数据库中已有 {provider_count} 个供应商，跳过自动同步")
+                if provider_count == 0:
+                    logger.info("   No providers in database, starting auto-sync...")
+                    service = ModelProviderService(db)
+                    result = await service.sync_all()
+                    logger.info(f"   ✓ Auto-sync completed: {result['providers']} providers, {result['models']} models")
+                    if result.get("errors"):
+                        for error in result["errors"]:
+                            logger.warning(f"   ⚠️  {error}")
+                else:
+                    logger.info(f"   ✓ {provider_count} providers already exist, skipping auto-sync")
     except Exception as e:
-        logger.warning(f"   ⚠️  自动同步供应商失败: {e}")
-        logger.warning("   应用将继续启动，可以稍后手动调用 /api/v1/model-providers/sync 接口")
+        logger.warning(f"   ⚠️  Auto-sync providers failed: {e}")
+        logger.warning("   App will continue starting, you can manually call /api/v1/model-providers/sync later")
 
-    # 启动时初始化 MCP 工具（加载所有启用的 MCP 服务器的工具到 registry）
+    # Initialize MCP tools on startup (load tools from all enabled MCP servers to registry)
     try:
         from app.services.tool_service import initialize_mcp_tools_on_startup
 
-        async with AsyncSessionLocal() as db:
-            total_tools = await initialize_mcp_tools_on_startup(db)
-            if total_tools > 0:
-                logger.info(f"   ✓ 已加载 {total_tools} 个 MCP 工具到 registry")
-            else:
-                logger.info("   ✓ MCP 工具初始化完成（无启用的服务器）")
+        # Use distributed lock. Although initialize_mcp_tools_on_startup might only load to memory,
+        # if it involves DB updates or to avoid concurrent external service queries, locking is safe.
+        async with RedisClient.lock("init:mcp_tools", timeout=60, blocking_timeout=60):
+            async with AsyncSessionLocal() as db:
+                total_tools = await initialize_mcp_tools_on_startup(db)
+                if total_tools > 0:
+                    logger.info(f"   ✓ Loaded {total_tools} MCP tools to registry")
+                else:
+                    logger.info("   ✓ MCP tools initialization completed (no enabled servers)")
     except Exception as e:
-        logger.warning(f"   ⚠️  MCP 工具初始化失败: {e}")
-        logger.warning("   应用将继续启动，MCP 工具将在首次使用时加载")
+        logger.warning(f"   ⚠️  MCP tools initialization failed: {e}")
+        logger.warning("   App will continue starting, MCP tools will be loaded on first use")
 
-    # 初始化默认模型缓存
+    # Initialize default model cache
     try:
         from app.core.database import get_db
         from app.core.settings import set_default_model_config
@@ -135,66 +140,69 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         from app.repositories.model_provider import ModelProviderRepository
         from app.services.model_credential_service import ModelCredentialService
 
-        async for db in get_db():
-            repo = ModelInstanceRepository(db)
-            provider_repo = ModelProviderRepository(db)
-            credential_service = ModelCredentialService(db)
+        # Lock here as well. Although it's mostly reading DB and writing config,
+        # serialization ensures orderly logs during multi-instance startup.
+        async with RedisClient.lock("init:default_model_config", timeout=30, blocking_timeout=30):
+            async for db in get_db():
+                repo = ModelInstanceRepository(db)
+                provider_repo = ModelProviderRepository(db)
+                credential_service = ModelCredentialService(db)
 
-            # 获取默认模型实例
-            default_instance = await repo.get_default()
-            if default_instance and default_instance.provider:
-                # 获取凭据
-                credentials = await credential_service.get_current_credentials(
-                    provider_name=default_instance.provider.name,
-                    model_type="chat",
-                    model_name=default_instance.model_name,
-                )
+                # Get default model instance
+                default_instance = await repo.get_default()
+                if default_instance and default_instance.provider:
+                    # Get credentials
+                    credentials = await credential_service.get_current_credentials(
+                        provider_name=default_instance.provider.name,
+                        model_type="chat",
+                        model_name=default_instance.model_name,
+                    )
 
-                if credentials:
-                    config = {
-                        "model": default_instance.model_name,
-                        "api_key": credentials.get("api_key", ""),
-                        "base_url": credentials.get("base_url"),
-                        "timeout": default_instance.model_parameters.get("timeout", 30)
-                        if default_instance.model_parameters
-                        else 30,
-                    }
-                    set_default_model_config(config)
-                    logger.info("   ✓ 默认模型缓存初始化完成")
+                    if credentials:
+                        config = {
+                            "model": default_instance.model_name,
+                            "api_key": credentials.get("api_key", ""),
+                            "base_url": credentials.get("base_url"),
+                            "timeout": default_instance.model_parameters.get("timeout", 30)
+                            if default_instance.model_parameters
+                            else 30,
+                        }
+                        set_default_model_config(config)
+                        logger.info("   ✓ Default model cache initialized")
+                    else:
+                        logger.warning("   ⚠️  Default model credentials not found")
                 else:
-                    logger.warning("   ⚠️  默认模型凭据未找到")
-            else:
-                logger.info("   ✓ 无默认模型配置")
+                    logger.info("   ✓ No default model configuration")
     except Exception as e:
-        logger.warning(f"   ⚠️  默认模型缓存初始化失败: {e}")
-        logger.warning("   应用将继续启动，LLM功能将在配置默认模型后可用")
+        logger.warning(f"   ⚠️  Default model cache initialization failed: {e}")
+        logger.warning("   App will continue starting, LLM features available after configuring default model")
 
-    # 初始化 Dynamic Agent 存储系统
+    # Initialize Dynamic Agent storage system
     try:
         from app.dynamic_agent.main import startup as agent_startup
 
         await agent_startup()
-        logger.info("   ✓ Dynamic Agent 存储系统初始化完成")
+        logger.info("   ✓ Dynamic Agent storage system initialized")
     except Exception as e:
         import traceback
 
         traceback.print_exc()
-        logger.warning(f"   ⚠️  Dynamic Agent 存储系统初始化失败: {e}")
-        logger.warning("   应用将继续启动，Dynamic Agent 功能可能不可用")
+        logger.warning(f"   ⚠️  Dynamic Agent storage system initialization failed: {e}")
+        logger.warning("   App will continue starting, Dynamic Agent features may be unavailable")
 
-    # 初始化 Checkpointer 连接池
+    # Initialize Checkpointer connection pool
     try:
         from app.core.agent.checkpointer.checkpointer import CheckpointerManager
 
         await CheckpointerManager.initialize()
-        logger.info("   ✓ Checkpointer 连接池初始化完成")
+        logger.info("   ✓ Checkpointer connection pool initialized")
     except Exception as e:
-        logger.warning(f"   ⚠️  Checkpointer 初始化失败: {e}")
-        logger.warning("   应用将继续启动，checkpoint 功能可能不可用")
+        logger.warning(f"   ⚠️  Checkpointer initialization failed: {e}")
+        logger.warning("   App will continue starting, checkpoint features may be unavailable")
 
     yield
 
-    # Shutdown: 关闭 Checkpointer 连接池
+    # Shutdown: Close Checkpointer connection pool
     try:
         from app.core.agent.checkpointer.checkpointer import CheckpointerManager
 
@@ -210,17 +218,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     print("👋 Application shutdown")
 
 
-# 创建应用
+# Create application
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="""
-## JoySafeter - 智能体平台后端服务
-### 技术栈
-- **FastAPI** - Web 框架
-- **PostgreSQL** - 数据库
-- **SQLAlchemy 2.0** - ORM (异步)
-- **LangChain 1.0 + LangGraph 1.0** - AI 框架
+## JoySafeter - Agent Platform Backend Service
+### Tech Stack
+- **FastAPI** - Web Framework
+- **PostgreSQL** - Database
+- **SQLAlchemy 2.0** - ORM (Async)
+- **LangChain 1.0 + LangGraph 1.0** - AI Framework
     """,
     docs_url="/docs" if settings.debug or settings.environment == "development" else None,
     redoc_url="/redoc" if settings.debug or settings.environment == "development" else None,
@@ -228,14 +236,14 @@ app = FastAPI(
 )
 
 
-# 异常处理
+# Exception handling
 register_exception_handlers(app)
 
 
-# 添加日志中间件
+# Add logging middleware
 app.add_middleware(LoggingMiddleware)
 
-# CORS 中间件
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -254,7 +262,7 @@ async def disable_cache_for_api(request: Request, call_next):
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
 
-        # 核心：移除条件缓存相关头
+        # Core: Remove conditional cache headers
         # response.headers.pop("ETag", None)
         # response.headers.pop("Last-Modified", None)
 
@@ -278,19 +286,19 @@ async def global_exception_handler(request, exc):
     )
 
 
-# 注册 API 路由
+# Register API Router
 app.include_router(dynamic_agent_app, prefix=DYNAMIC_AGENT_PREFIX)
 
 app.include_router(api_router, prefix="/api")
 
-# 图变量分析路由（/api/graph/{graph_id}/variables）
+# Graph Variables Router (/api/graph/{graph_id}/variables)
 app.include_router(graph_variables_router, prefix="/api", tags=["Graph Variables"])
 
 
-# 注册会话管理路由
+# Register Conversation Management Router
 app.include_router(conversations_router, prefix="/api/v1")
 
-# 注册文件管理路由
+# Register File Management Router
 app.include_router(files_router, prefix="/api/v1")
 
 # Include API routers
@@ -298,13 +306,13 @@ app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(memory_router, prefix="/api/v1/memory", tags=["memory"])
 
 
-# 注册路由
+# Register Router
 @app.get("/", tags=["Root"])
 async def root():
-    """根路径，健康检查"""
+    """Root path, health check"""
     return {
         "status": "ok",
-        "message": "Langchain+fastapi生产级后端 is running!",
+        "message": "Langchain+fastapi production-grade backend is running!",
         "docs": "/docs",
         "redoc": "/redoc",
     }
@@ -317,7 +325,7 @@ async def websocket_endpoint(
     session_id: str,
 ):
     """WebSocket endpoint for real-time chat with JWT authentication."""
-    # 1. 验证认证
+    # 1. Verify authentication
     is_authenticated, user_id = await authenticate_websocket(websocket)
 
     if not is_authenticated or not user_id:
@@ -328,7 +336,7 @@ async def websocket_endpoint(
         async with AsyncSessionLocal() as db:
             session_service = SessionService(db)
 
-            # 2. 验证 session 归属
+            # 2. Verify session ownership
             session = await session_service.get_session_for_user(session_id, user_id)
             if not session:
                 await reject_websocket(
@@ -336,7 +344,7 @@ async def websocket_endpoint(
                 )
                 return
 
-            # 3. 建立连接
+            # 3. Establish connection
             await websocket.accept()
             chat_handler = ChatHandler(session_service)
             await chat_handler.handle_connection(websocket, session_id, int(user_id))
@@ -350,6 +358,123 @@ async def websocket_endpoint(
         except Exception:
             pass
 
+
+@app.websocket("/ws/notifications")
+async def notification_websocket_endpoint(websocket: WebSocket):
+    import json
+
+    is_authenticated, user_id = await authenticate_websocket(websocket)
+
+    if not is_authenticated or not user_id:
+        await reject_websocket(websocket, code=WebSocketCloseCode.UNAUTHORIZED, reason="Authentication required")
+        return
+
+    try:
+        await websocket.accept()
+        await notification_manager.connect(websocket, user_id)
+
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                if message.get("type") == "ping":
+                    await notification_manager.send_to_connection(
+                        websocket,
+                        {
+                            "type": NotificationType.PONG.value,
+                        },
+                    )
+
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket notification error for user {user_id}: {e}")
+    finally:
+        notification_manager.disconnect(websocket)
+        logger.info(f"WebSocket notification disconnected for user {user_id}")
+
+
+@app.websocket("/ws/notifications/{user_id}")
+async def notification_websocket_endpoint_legacy(websocket: WebSocket, user_id: str):
+    import json
+
+    is_authenticated, token_user_id = await authenticate_websocket(websocket)
+
+    if not is_authenticated or not token_user_id:
+        await reject_websocket(websocket, code=WebSocketCloseCode.UNAUTHORIZED, reason="Authentication required")
+        return
+
+    if str(token_user_id) != str(user_id):
+        await reject_websocket(websocket, code=WebSocketCloseCode.FORBIDDEN, reason="User ID mismatch")
+        return
+
+    try:
+        await websocket.accept()
+        await notification_manager.connect(websocket, user_id)
+
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                if message.get("type") == "ping":
+                    await notification_manager.send_to_connection(
+                        websocket,
+                        {
+                            "type": NotificationType.PONG.value,
+                        },
+                    )
+
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket notification error for user {user_id}: {e}")
+    finally:
+        notification_manager.disconnect(websocket)
+        logger.info(f"WebSocket notification disconnected for user {user_id}")
+
+
+@app.websocket("/ws/copilot/{session_id}")
+async def copilot_websocket_endpoint(websocket: WebSocket, session_id: str):
+    """
+    WebSocket endpoint for Copilot session subscription.
+    Subscribes to Redis Pub/Sub and forwards events to clients.
+
+    Args:
+        session_id: Copilot session ID to subscribe to
+    """
+    # Authenticate WebSocket connection
+    is_authenticated, user_id = await authenticate_websocket(websocket)
+
+    if not is_authenticated or not user_id:
+        await reject_websocket(websocket, code=WebSocketCloseCode.UNAUTHORIZED, reason="Authentication required")
+        return
+
+    # Handle connection
+    await copilot_handler.handle_connection(websocket, session_id)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.reload,
+        workers=settings.workers,
+    )
 
 @app.websocket("/ws/notifications")
 async def notification_websocket_endpoint(websocket: WebSocket):
