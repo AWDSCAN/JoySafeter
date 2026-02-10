@@ -84,7 +84,7 @@ class DeepAgentsGraphBuilder(BaseGraphBuilder):
 
     async def _get_user_sandbox(self) -> "PydanticSandboxAdapter":
         """Get user's private sandbox from SandboxManagerService.
-        
+
         This method ensures that all graph executions for a user share
         the same sandbox container, providing:
         - Per-user isolation
@@ -93,7 +93,7 @@ class DeepAgentsGraphBuilder(BaseGraphBuilder):
         """
         if not self.user_id:
             raise ValueError(f"{LOG_PREFIX} user_id is required for sandbox execution")
-        
+
         try:
             async with async_session_factory() as session:
                 service = SandboxManagerService(session)
@@ -106,14 +106,16 @@ class DeepAgentsGraphBuilder(BaseGraphBuilder):
 
     async def _cleanup_backend(self) -> None:
         """Release shared backend reference.
-        
+
         Note: We do NOT cleanup/destroy the sandbox container here because
         the sandbox is managed by SandboxManagerService and shared across
         multiple graph executions for the same user. The sandbox pool handles
         the actual lifecycle management (idle timeout, etc.).
         """
         if self._shared_backend:
-            logger.debug(f"{LOG_PREFIX} Releasing reference to user sandbox: id={getattr(self._shared_backend, 'id', 'unknown')}")
+            logger.debug(
+                f"{LOG_PREFIX} Releasing reference to user sandbox: id={getattr(self._shared_backend, 'id', 'unknown')}"
+            )
             # Just release the reference, don't destroy the container
             self._shared_backend = None
 

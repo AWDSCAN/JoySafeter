@@ -181,7 +181,7 @@ async def sign_in_with_email(
 @router.post("/login/form", response_model=Token)
 async def login_form(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    background_tasks: BackgroundTasks = None,  # Optional for form login
+    background_tasks: Optional[BackgroundTasks] = None,  # Optional for form login
     db: AsyncSession = Depends(get_db),
 ):
     """Login via OAuth2 password form (for Swagger UI compatibility)."""
