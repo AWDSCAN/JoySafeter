@@ -4,20 +4,22 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional, cast
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exceptions import UnauthorizedException
 from app.common.response import success_response
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.rate_limit import auth_rate_limit, strict_rate_limit
 from app.core.security import Token, decode_token
 from app.core.settings import settings
 from app.models.auth import AuthUser
 from app.services.auth_service import AuthService
 from app.services.auth_session_service import AuthSessionService
+from app.services.sandbox_manager import SandboxManagerService
 
 router = APIRouter(prefix="/v1/auth", tags=["Auth"])
 
@@ -78,6 +80,17 @@ class UserResponse(BaseModel):
     is_super_user: bool
 
 
+async def _warm_up_sandbox(user_id: str):
+    """Background task to warm up user sandbox."""
+    try:
+        async with AsyncSessionLocal() as session:
+            sandbox_service = SandboxManagerService(session)
+            await sandbox_service.ensure_sandbox_running(user_id)
+            logger.info(f"Sandbox pre-warming triggered for user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to pre-warm sandbox for user {user_id}: {e}")
+
+
 # Endpoints
 
 
@@ -113,6 +126,7 @@ async def sign_in_with_email(
     http_request: Request,
     body: LoginRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Email login endpoint."""
@@ -155,17 +169,31 @@ async def sign_in_with_email(
     if csrf_token:
         result["csrf_token"] = csrf_token
 
+    # Trigger sandbox pre-warming
+    if result.get("user"):
+        user_id = result["user"].get("id")
+        if user_id:
+            background_tasks.add_task(_warm_up_sandbox, str(user_id))
+
     return success_response(data=result, message="Login successful")
 
 
 @router.post("/login/form", response_model=Token)
 async def login_form(
     form_data: OAuth2PasswordRequestForm = Depends(),
+    background_tasks: BackgroundTasks = None,  # Optional for form login
     db: AsyncSession = Depends(get_db),
 ):
     """Login via OAuth2 password form (for Swagger UI compatibility)."""
     service = AuthService(db)
     result = await service.login(email=form_data.username, password=form_data.password)
+
+    # Trigger sandbox pre-warming if background_tasks is available
+    if background_tasks and result.get("user"):
+        user_id = result["user"].get("id")
+        if user_id:
+            background_tasks.add_task(_warm_up_sandbox, str(user_id))
+
     return Token(
         access_token=result["access_token"],
         token_type=result["token_type"],

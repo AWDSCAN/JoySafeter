@@ -22,7 +22,7 @@ providers:
 
   # Local testing (with mock service)
   local:
-    enabled: true
+    enabled: false
     display_name: "本地测试"
     icon: "key"
     client_id: ${OAUTH_LOCAL_CLIENT_ID}

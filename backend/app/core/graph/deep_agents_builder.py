@@ -12,6 +12,7 @@ from deepagents import create_deep_agent
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.core.database import async_session_factory
 from app.core.graph.base_graph_builder import (
     BaseGraphBuilder,
 )
@@ -19,6 +20,7 @@ from app.core.graph.deep_agents.node_config import AgentConfig
 from app.core.graph.deep_agents.node_factory import DeepAgentsNodeBuilder
 from app.core.graph.deep_agents.skills_manager import DeepAgentsSkillsManager
 from app.models.graph import GraphNode
+from app.services.sandbox_manager import SandboxManagerService
 
 # Constants
 LOG_PREFIX = "[DeepAgentsBuilder]"
@@ -43,11 +45,11 @@ class DeepAgentsGraphBuilder(BaseGraphBuilder):
             raise ValueError("No nodes provided for DeepAgents graph")
 
         try:
-            # Create shared Docker backend if needed (only once)
+            # Get user's shared sandbox if needed (reuses existing sandbox from pool)
             if self._needs_docker_backend():
-                self._shared_backend = self._create_docker_backend()
+                self._shared_backend = await self._get_user_sandbox()
                 logger.info(
-                    f"{LOG_PREFIX} Created shared Docker backend: id={getattr(self._shared_backend, 'id', 'unknown')}"
+                    f"{LOG_PREFIX} Using user sandbox: id={getattr(self._shared_backend, 'id', 'unknown')}, user_id={self.user_id}"
                 )
 
             root_node = self._select_and_validate_root()
@@ -80,46 +82,40 @@ class DeepAgentsGraphBuilder(BaseGraphBuilder):
 
         return False
 
-    def _create_docker_backend(self) -> "PydanticSandboxAdapter":
-        """Create shared Docker backend for all nodes."""
+    async def _get_user_sandbox(self) -> "PydanticSandboxAdapter":
+        """Get user's private sandbox from SandboxManagerService.
+        
+        This method ensures that all graph executions for a user share
+        the same sandbox container, providing:
+        - Per-user isolation
+        - Sandbox pooling and reuse
+        - Persistent workspace across sessions
+        """
+        if not self.user_id:
+            raise ValueError(f"{LOG_PREFIX} user_id is required for sandbox execution")
+        
         try:
-            from app.core.agent.backends.pydantic_adapter import PydanticSandboxAdapter
-        except ImportError as e:
-            raise ImportError(
-                "pydantic-ai-backend[docker] is required for shared Docker backend. "
-                "Install with: pip install pydantic-ai-backend[docker]"
-            ) from e
-
-        # Determine Docker image from nodes
-        docker_image = "python:3.12-slim"
-        for node in self.nodes:
-            data = node.data or {}
-            if data.get("type") == "code_agent":
-                config = data.get("config", {})
-                docker_image = config.get("docker_image", docker_image)
-                break
-
-        try:
-            backend = PydanticSandboxAdapter(
-                image=docker_image,
-                working_dir="/workspace",
-            )
-            logger.info(f"{LOG_PREFIX} Created shared Docker backend: id={backend.id}, image={docker_image}")
-            return backend
+            async with async_session_factory() as session:
+                service = SandboxManagerService(session)
+                adapter = await service.ensure_sandbox_running(str(self.user_id))
+                logger.info(f"{LOG_PREFIX} Got user sandbox: id={adapter.id}, user_id={self.user_id}")
+                return adapter
         except Exception as e:
-            raise RuntimeError(f"{LOG_PREFIX} Failed to create shared Docker backend: {e}") from e
+            logger.error(f"{LOG_PREFIX} Failed to get user sandbox for user_id={self.user_id}: {e}")
+            raise RuntimeError(f"{LOG_PREFIX} Failed to get user sandbox: {e}") from e
 
     async def _cleanup_backend(self) -> None:
-        """Clean up shared Docker backend."""
+        """Release shared backend reference.
+        
+        Note: We do NOT cleanup/destroy the sandbox container here because
+        the sandbox is managed by SandboxManagerService and shared across
+        multiple graph executions for the same user. The sandbox pool handles
+        the actual lifecycle management (idle timeout, etc.).
+        """
         if self._shared_backend:
-            try:
-                if hasattr(self._shared_backend, "cleanup"):
-                    self._shared_backend.cleanup()
-                logger.info(f"{LOG_PREFIX} Cleaned up shared Docker backend")
-            except Exception as e:
-                logger.warning(f"{LOG_PREFIX} Failed to cleanup shared backend: {e}")
-            finally:
-                self._shared_backend = None
+            logger.debug(f"{LOG_PREFIX} Releasing reference to user sandbox: id={getattr(self._shared_backend, 'id', 'unknown')}")
+            # Just release the reference, don't destroy the container
+            self._shared_backend = None
 
     def _select_and_validate_root(self) -> GraphNode:
         """Select and validate root node."""

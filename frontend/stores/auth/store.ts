@@ -12,6 +12,7 @@ interface SafeUserInfo {
   email: string
   name: string
   image?: string | null
+  isSuperUser: boolean
 }
 
 /**
@@ -38,10 +39,7 @@ interface AuthState {
   setError: (error: string | null) => void
   clearAuth: () => void
 }
-
-/**
- * Extract safe display information from complete user object
- */
+// ...
 function extractSafeUserInfo(user: AuthUser | null): SafeUserInfo | null {
   if (!user) return null
   return {
@@ -49,6 +47,7 @@ function extractSafeUserInfo(user: AuthUser | null): SafeUserInfo | null {
     email: user.email,
     name: user.name,
     image: user.image,
+    isSuperUser: user.isSuperUser,
   }
 }
 
@@ -90,8 +89,8 @@ export const useAuthStore = create<AuthState>()(
           // SSR environment returns empty storage
           return {
             getItem: () => null,
-            setItem: () => {},
-            removeItem: () => {},
+            setItem: () => { },
+            removeItem: () => { },
           }
         }
         return localStorage
