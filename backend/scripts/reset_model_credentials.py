@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from typing import Any
 
 from sqlalchemy import text
 
@@ -111,10 +110,7 @@ async def reset_model_credentials(dry_run: bool = True) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "重置模型凭据表（model_credential）。"
-            "默认以 dry-run 预览模式运行，使用 --force 执行实际删除。"
-        )
+        description=("重置模型凭据表（model_credential）。" "默认以 dry-run 预览模式运行，使用 --force 执行实际删除。")
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -149,4 +145,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-
