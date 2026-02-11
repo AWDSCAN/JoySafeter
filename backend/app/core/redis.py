@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Dict, Optional, cast
 
 import redis.asyncio as redis_async
-from redis.exceptions import LockError
 from redis.asyncio.connection import ConnectionPool
+from redis.exceptions import LockError
 
 from .settings import settings
 
@@ -151,7 +151,7 @@ class RedisClient:
 
         # Use redis-py lock
         lock = cls._client.lock(name, timeout=timeout, blocking_timeout=blocking_timeout)
-        
+
         acquired = False
         try:
             # Try to acquire lock
@@ -159,12 +159,12 @@ class RedisClient:
             acquired = await lock.acquire(blocking=True)
             if not acquired:
                 raise TimeoutError(f"Could not acquire lock {name} within {blocking_timeout} seconds")
-            
+
             yield True
-            
+
         except TimeoutError:
-             raise
-             
+            raise
+
         finally:
             if acquired:
                 try:
