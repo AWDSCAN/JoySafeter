@@ -17,6 +17,10 @@ from loguru import logger
 from app.core.database import AsyncSessionLocal
 from app.services.skill_service import SkillService
 
+# Import all models to ensure SQLAlchemy can configure relationships
+from app.models import AuthUser as User  # noqa: F401
+from app.models.user_sandbox import UserSandbox  # noqa: F401
+
 # Setup logging
 logger.remove()
 logger.add(sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}", level="INFO")
@@ -67,8 +71,6 @@ async def load_skills():
         # For simplicity, finding an admin user
         from sqlalchemy import select
 
-        from app.models.auth import AuthUser as User
-
         # Try to find admin user
         result = await db.execute(select(User).where(User.is_super_user.is_(True)))
         admin = result.scalars().first()
@@ -81,6 +83,7 @@ async def load_skills():
 
         if not admin:
             logger.error("No users found in database. Cannot assign skill ownership. Skipping skill loading.")
+            logger.error("Please ensure admin user is created before loading skills.")
             return
 
         owner_id = str(admin.id)

@@ -69,9 +69,10 @@ docker-compose*.yml
 # Alembic
 alembic.ini.bak
 
-# 本地脚本（保留 db 初始化脚本）
+# 本地脚本（保留 db 初始化脚本和 load_skills.py）
 scripts/*
 !scripts/db/
+!scripts/load_skills.py
 
 # 测试文件
 tests/

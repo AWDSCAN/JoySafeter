@@ -2,30 +2,39 @@
 # 用于 init.Dockerfile，只包含数据库迁移和初始化脚本所需的包
 
 # 数据库连接（init-db.py 和 utils.py 需要）
-psycopg2-binary>=2.9.11
+psycopg2-binary==2.9.11
 
 # 环境变量加载（utils.py 需要）
-python-dotenv>=1.0.0
+python-dotenv==1.2.1
 
 # 数据库迁移工具
-alembic>=1.14.0
+alembic==1.17.2
 
 # ORM 框架
-sqlalchemy>=2.0.44
+sqlalchemy==2.0.45
 
 # PostgreSQL 驱动
-asyncpg>=0.30.0
-psycopg[binary,pool]>=3.1.0
+asyncpg==0.31.0
+psycopg[binary,pool]==3.3.2
 
 # SQLAlchemy async 支持
-greenlet>=3.0.0
+greenlet==3.3.0
 
 # Settings 配置需要
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
+pydantic==2.12.5
+pydantic-settings==2.12.0
 
 # 模型依赖（message.py 需要）
-loguru>=0.7.3
+loguru==0.7.3
 
 # 工具模块依赖（media.py 需要）
-httpx>=0.27.0
+httpx==0.28.1
+
+# FastAPI（app.common.exceptions 需要）
+fastapi[standard]==0.128.0
+
+# LangGraph（services 需要）
+langgraph==1.0.7
+
+# 其他必要依赖（根据实际报错补充）
+deepagents==0.3.11

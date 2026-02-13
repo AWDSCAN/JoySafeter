@@ -148,6 +148,57 @@ def run_migrations(config):
         return False
 
 
+def create_default_admin(config):
+    """创建默认管理员用户"""
+    print("👤 创建默认管理员用户...")
+    
+    # 使用 environment variables or defaults
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@joysafeter.local")
+    admin_name = os.getenv("ADMIN_NAME", "Admin")
+    
+    try:
+        # 添加项目根目录到路径，以便导入 app 模块
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
+        import asyncio
+        from sqlalchemy import select
+        from app.core.database import async_session_factory
+        from app.models.auth import AuthUser
+        
+        async def create_admin():
+            async with async_session_factory() as session:
+                # 检查是否已存在用户
+                result = await session.execute(select(AuthUser))
+                existing_user = result.scalars().first()
+                
+                if existing_user:
+                    print(f"ℹ️  用户已存在，跳过管理员创建")
+                    return True
+                
+                # 创建默认管理员
+                admin = AuthUser(
+                    name=admin_name,
+                    email=admin_email,
+                    is_super_user=True,
+                    is_active=True,
+                    email_verified=True,
+                )
+                session.add(admin)
+                await session.commit()
+                print(f"✅ 已创建默认管理员: {admin_email}")
+                return True
+        
+        asyncio.run(create_admin())
+        return True
+        
+    except Exception as e:
+        print(f"⚠️  创建管理员用户时出错: {e}")
+        print("   （Skill 加载时会自动创建，可忽略此警告）")
+        return True  # 不影响主流程
+
+
 def run_skill_loader():
     """运行 Skill 加载脚本"""
     print("📦 正在加载 Skills...")
@@ -219,7 +270,10 @@ def main():
     # 4. 修复 collation 警告（可选）
     fix_collation_warning(config)
 
-    # 5. 加载 Skills
+    # 5. 创建默认管理员用户
+    create_default_admin(config)
+
+    # 6. 加载 Skills
     run_skill_loader()
 
     print("=" * 60)

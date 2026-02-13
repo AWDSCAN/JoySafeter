@@ -27,26 +27,20 @@ COPY requirements-db-init.txt .
 # 安装 Python 依赖（只安装数据库初始化所需的包）
 RUN pip install --no-cache-dir -r requirements-db-init.txt -i ${PIP_INDEX_URL}
 
-# 复制数据库初始化脚本
+# 复制数据库初始化脚本和其他必需脚本
 COPY scripts/db/ scripts/db/
+COPY scripts/load_skills.py scripts/
 
 # 复制 Alembic 配置和迁移文件
 COPY alembic.ini .
 COPY alembic/ alembic/
 
-# 复制应用核心文件（数据库和配置）
-COPY app/__init__.py app/
-COPY app/core/__init__.py app/core/
-COPY app/core/database.py app/core/
-COPY app/core/settings.py app/core/
-
-# 复制数据模型（Alembic 需要导入所有模型）
-COPY app/models/ app/models/
+# 复制整个 app 目录（包含所有必需的模块）
+COPY app/ app/
 
 # 复制工具模块（message.py 需要 media.py 中的类型，__init__.py 需要 datetime.py）
-COPY app/utils/__init__.py app/utils/
-COPY app/utils/media.py app/utils/
-COPY app/utils/datetime.py app/utils/
+# 注意：app/utils 已经包含在上面的 app/ 复制中了，这里保留是为了文档说明
+# COPY app/utils/ app/utils/
 
 # 设置环境变量
 # 注意：确保 Python 可以找到 app 模块

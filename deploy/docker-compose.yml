@@ -116,6 +116,8 @@ services:
         condition: service_healthy
     env_file:
       - ../backend/.env
+    volumes:
+      - ../skills:/app/skills  # 挂载 Skills 目录用于加载技能
     # 注意：数据库连接信息完全从 env_file (../backend/.env) 读取
     # 支持使用外部 PostgreSQL，只需在 backend/.env 中配置正确的 POSTGRES_HOST、POSTGRES_PORT 等
     # 如果使用外部数据库，需要注释掉上面的 depends_on: db 部分
